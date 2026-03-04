@@ -1,0 +1,63 @@
+/* src/index.css */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+:root {
+  /* 세련된 한글 가독성을 위해 폰트 설정 */
+  font-family: 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  /* 강제로 라이트 모드(화이트톤) 고정 */
+  color-scheme: light;
+  color: #0f172a;
+  /* 텍스트는 너무 까맣지 않은 고급스러운 진남색 계열 */
+  background-color: #f8fafc;
+  /* 폼 배경과 이어지는 부드러운 회백색 */
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: inherit;
+}
+
+/* React 앱의 최상단 컨테이너가 화면 전체를 쓰도록 설정 */
+#root {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 767px) {
+  html, body { min-height: 100dvh; }
+  #root { min-height: 100dvh; }
+}
+
+/* Vite 기본 스타일 찌꺼기 제거 */
+a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  font-family: inherit;
+}
