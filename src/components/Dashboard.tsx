@@ -1,5 +1,5 @@
 // src/components/Dashboard.tsx
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../supabaseClient'
 import { useBreakpoint } from '../hooks/useBreakpoint'
@@ -11,86 +11,57 @@ import GradeManager from './GradeManager'
 import MockInterview from './MockInterview'
 import FileVault from './FileVault'
 import Messages from './Messages'
-import { Compass, Home, Mic, FileEdit, BarChart2, MonitorPlay, Bot, User, LogOut, Loader2, FolderOpen, MessageSquare, Menu, X } from 'lucide-react'
+import {
+  Compass, Home, Mic, FileEdit, BarChart2, MonitorPlay,
+  Bot, User, LogOut, Loader2, FolderOpen, MessageSquare, Menu, X,
+} from 'lucide-react'
 
-interface DashboardProps {
-  session: Session
+interface DashboardProps { session: Session }
+
+// TABS를 모듈 레벨로 분리 — 매 렌더마다 새로 생성되는 것 방지
+const TABS = [
+  { id: 'overview',  name: '나의 정의서',   icon: Home          },
+  { id: 'qna',       name: '면접 Q&A 뱅크', icon: Mic           },
+  { id: 'mock',      name: '모의면접실',     icon: MonitorPlay   },
+  { id: 'records',   name: '생기부 첨삭소',  icon: FileEdit      },
+  { id: 'grades',    name: '나의 성적',      icon: BarChart2     },
+  { id: 'vault',     name: '나의 파일',      icon: FolderOpen    },
+  { id: 'messages',  name: '메세지',         icon: MessageSquare },
+]
+
+// ── SidebarContent — Dashboard 밖으로 분리해 불필요한 리마운트 방지 ──────────
+interface SidebarProps {
+  isMobile: boolean
+  isTablet: boolean
+  isOnboarded: boolean
+  activeTab: string
+  aiTokens: number
+  humanTokens: number
+  onTabClick: (id: string) => void
+  onClose?: () => void
+  onLogout: () => void
 }
 
-export default function Dashboard({ session }: DashboardProps) {
-  const [isChecking, setIsChecking]   = useState(true)
-  const [isOnboarded, setIsOnboarded] = useState(false)
-  const [activeTab, setActiveTab]     = useState('overview')
-  const [aiTokens, setAiTokens]       = useState(0)
-  const [humanTokens, setHumanTokens] = useState(0)
-  
-  // 모바일 사이드바 토글 상태
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  
-  const { isMobile, isTablet } = useBreakpoint()
+function SidebarContent({
+  isMobile, isTablet, isOnboarded, activeTab,
+  aiTokens, humanTokens, onTabClick, onClose, onLogout,
+}: SidebarProps) {
+  const compact = isTablet && !isMobile
 
-  useEffect(() => {
-    const fetchUserData = async () => {
-      const { data: profile } = await supabase
-        .from('profiles').select('ai_tokens, human_tokens').eq('id', session.user.id).single()
-      if (profile) { setAiTokens(profile.ai_tokens); setHumanTokens(profile.human_tokens) }
-
-      const { data: onboarding } = await supabase
-        .from('onboarding_data').select('id').eq('user_id', session.user.id).limit(1)
-      if (onboarding && onboarding.length > 0) setIsOnboarded(true)
-
-      setIsChecking(false)
-    }
-    fetchUserData()
-
-    const channel = supabase.channel('profile-changes')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${session.user.id}` }, (payload) => {
-        setAiTokens(payload.new.ai_tokens)
-        setHumanTokens(payload.new.human_tokens)
-      }).subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [session.user.id])
-
-  const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut()
-    if (error) alert('로그아웃 중 에러가 발생했어요: ' + error.message)
-  }
-
-  // 탭 이동 시 모바일 메뉴 자동 닫기
-  const handleTabClick = (tabId: string) => {
-    setActiveTab(tabId)
-    setIsMobileMenuOpen(false)
-  }
-
-  if (isChecking) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
-        <Loader2 className="animate-spin" size={40} color="#2563eb" />
-      </div>
-    )
-  }
-
-  const TABS = [
-    { id: 'overview',  name: '나의 정의서',   icon: Home        },
-    { id: 'qna',       name: '면접 Q&A 뱅크', icon: Mic         },
-    { id: 'mock',      name: '모의면접실',     icon: MonitorPlay },
-    { id: 'records',   name: '생기부 첨삭소',  icon: FileEdit    },
-    { id: 'grades',    name: '나의 성적',      icon: BarChart2   },
-    { id: 'vault',     name: '나의 파일',      icon: FolderOpen  },
-    { id: 'messages',  name: '메세지',         icon: MessageSquare },
-  ]
-
-  // 공통 사이드바 콘텐츠 컴포넌트 (PC, 모바일 재사용)
-  const SidebarContent = () => (
+  return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isMobile ? '32px' : (isTablet ? '32px' : '48px'), color: '#0f172a' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: compact ? '32px' : '48px',
+      }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Compass size={isTablet && !isMobile ? 24 : 28} strokeWidth={2.5} color="#2563eb" />
-          <h2 style={{ margin: 0, fontSize: isTablet && !isMobile ? '18px' : '22px', fontWeight: '800', letterSpacing: '-0.5px' }}>Compass</h2>
+          <Compass size={compact ? 24 : 28} strokeWidth={2.5} color="#2563eb" />
+          <h2 style={{ margin: 0, fontSize: compact ? '18px' : '22px', fontWeight: '800', letterSpacing: '-0.5px', color: '#0f172a' }}>
+            Compass
+          </h2>
         </div>
-        {isMobile && (
-          <button onClick={() => setIsMobileMenuOpen(false)} style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer' }}>
+        {isMobile && onClose && (
+          <button onClick={onClose} style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer' }}>
             <X size={24} color="#94a3b8" />
           </button>
         )}
@@ -99,24 +70,27 @@ export default function Dashboard({ session }: DashboardProps) {
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '6px', flexGrow: 1 }}>
         {TABS.map(tab => {
           const Icon = tab.icon
+          const isActive = activeTab === tab.id
           return (
             <button
               key={tab.id}
-              onClick={() => handleTabClick(tab.id)}
+              onClick={() => onTabClick(tab.id)}
               disabled={!isOnboarded}
               style={{
-                display: 'flex', alignItems: 'center', gap: isTablet && !isMobile ? '8px' : '12px',
-                padding: isTablet && !isMobile ? '11px 12px' : '14px 16px',
+                display: 'flex', alignItems: 'center',
+                gap: compact ? '8px' : '12px',
+                padding: compact ? '11px 12px' : '14px 16px',
                 borderRadius: '12px', border: 'none',
                 cursor: !isOnboarded ? 'not-allowed' : 'pointer',
-                fontSize: isTablet && !isMobile ? '13px' : '15px', transition: 'all 0.2s ease',
-                backgroundColor: activeTab === tab.id ? '#eff6ff' : 'transparent',
-                color:           activeTab === tab.id ? '#2563eb'  : '#64748b',
-                fontWeight:      activeTab === tab.id ? '700'      : '600',
+                fontSize: compact ? '13px' : '15px',
+                transition: 'all 0.2s ease', textAlign: 'left',
+                backgroundColor: isActive ? '#eff6ff' : 'transparent',
+                color:           isActive ? '#2563eb' : '#64748b',
+                fontWeight:      isActive ? '700'     : '600',
                 opacity: !isOnboarded ? 0.5 : 1,
               }}
             >
-              <Icon size={isTablet && !isMobile ? 18 : 20} strokeWidth={activeTab === tab.id ? 2.5 : 2} />
+              <Icon size={compact ? 18 : 20} strokeWidth={isActive ? 2.5 : 2} />
               {tab.name}
             </button>
           )
@@ -124,7 +98,10 @@ export default function Dashboard({ session }: DashboardProps) {
       </nav>
 
       <div style={{ marginTop: 'auto', borderTop: '1px solid #e2e8f0', paddingTop: '24px' }}>
-        <div style={{ marginBottom: '16px', padding: isTablet && !isMobile ? '12px' : '16px', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+        <div style={{
+          marginBottom: '16px', padding: compact ? '12px' : '16px',
+          backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0',
+        }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', fontSize: '13px', color: '#475569' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Bot size={16} /><span style={{ fontWeight: '600' }}>AI 토큰</span>
@@ -139,8 +116,15 @@ export default function Dashboard({ session }: DashboardProps) {
           </div>
         </div>
         <button
-          onClick={handleLogout}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '14px', backgroundColor: '#ffffff', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', transition: 'background-color 0.2s ease' }}
+          onClick={onLogout}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            gap: '8px', width: '100%', padding: '14px',
+            backgroundColor: '#ffffff', color: '#64748b',
+            border: '1px solid #e2e8f0', borderRadius: '12px',
+            fontSize: '14px', fontWeight: '700', cursor: 'pointer',
+            transition: 'background-color 0.2s ease',
+          }}
           onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
           onMouseLeave={e => e.currentTarget.style.backgroundColor = '#ffffff'}
         >
@@ -149,11 +133,97 @@ export default function Dashboard({ session }: DashboardProps) {
       </div>
     </>
   )
+}
+
+// ── 메인 Dashboard ──────────────────────────────────────────────────────────
+export default function Dashboard({ session }: DashboardProps) {
+  const [isChecking, setIsChecking]         = useState(true)
+  const [isOnboarded, setIsOnboarded]       = useState(false)
+  const [activeTab, setActiveTab]           = useState('overview')
+  const [aiTokens, setAiTokens]             = useState(0)
+  const [humanTokens, setHumanTokens]       = useState(0)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+
+  const { isMobile, isTablet } = useBreakpoint()
+
+  // 토큰 명시적 조회 — Realtime이 안 올 때 fallback으로 사용
+  const refreshTokens = useCallback(async () => {
+    const { data } = await supabase
+      .from('profiles').select('ai_tokens, human_tokens')
+      .eq('id', session.user.id).single()
+    if (data) {
+      setAiTokens(data.ai_tokens)
+      setHumanTokens(data.human_tokens)
+    }
+  }, [session.user.id])
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      const { data: profile } = await supabase
+        .from('profiles').select('ai_tokens, human_tokens')
+        .eq('id', session.user.id).single()
+      if (profile) { setAiTokens(profile.ai_tokens); setHumanTokens(profile.human_tokens) }
+
+      const { data: onboarding } = await supabase
+        .from('onboarding_data').select('id').eq('user_id', session.user.id).limit(1)
+      if (onboarding && onboarding.length > 0) setIsOnboarded(true)
+
+      setIsChecking(false)
+    }
+    fetchUserData()
+
+    // Realtime 구독
+    // ※ 동작 안 하면 Supabase 대시보드에서 실행:
+    //   ALTER PUBLICATION supabase_realtime ADD TABLE profiles;
+    const channel = supabase.channel('profile-token-changes')
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'profiles',
+        filter: `id=eq.${session.user.id}`,
+      }, (payload) => {
+        setAiTokens(payload.new.ai_tokens)
+        setHumanTokens(payload.new.human_tokens)
+      }).subscribe()
+
+    // Realtime 미동작 대비 30초 폴링 fallback
+    const poll = setInterval(refreshTokens, 30_000)
+
+    return () => {
+      supabase.removeChannel(channel)
+      clearInterval(poll)
+    }
+  }, [session.user.id, refreshTokens])
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut()
+    if (error) alert('로그아웃 중 에러가 발생했어요: ' + error.message)
+  }
+
+  const handleTabClick = (tabId: string) => {
+    setActiveTab(tabId)
+    setIsMobileMenuOpen(false)
+    // 탭 이동 시 토큰 즉시 갱신 — AI 기능 쓰고 탭 이동하면 바로 반영
+    refreshTokens()
+  }
+
+  if (isChecking) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
+        <Loader2 className="animate-spin" size={40} color="#2563eb" />
+      </div>
+    )
+  }
+
+  const sidebarProps: SidebarProps = {
+    isMobile, isTablet, isOnboarded, activeTab,
+    aiTokens, humanTokens,
+    onTabClick: handleTabClick,
+    onLogout: handleLogout,
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
 
-      {/* 모바일 상단 헤더 (햄버거 메뉴 포함) */}
+      {/* 모바일 상단 헤더 */}
       {isMobile && (
         <div style={{
           position: 'sticky', top: 0, zIndex: 40,
@@ -162,41 +232,37 @@ export default function Dashboard({ session }: DashboardProps) {
           backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button onClick={() => setIsMobileMenuOpen(true)} style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <button onClick={() => setIsMobileMenuOpen(true)} style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', display: 'flex' }}>
               <Menu size={24} color="#0f172a" />
             </button>
             <span style={{ fontSize: '17px', fontWeight: '800', color: '#0f172a', letterSpacing: '-0.5px' }}>Compass</span>
           </div>
-          
-          {/* 상단 우측 미니 토큰 표시 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: '#475569' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Bot size={14} color="#2563eb" />
-              <span style={{ fontWeight: '700', color: '#2563eb' }}>{aiTokens}</span>
+              <span style={{ fontWeight: '800', fontSize: '13px', color: '#2563eb' }}>{aiTokens}</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: '#475569' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <User size={14} color="#ea580c" />
-              <span style={{ fontWeight: '700', color: '#ea580c' }}>{humanTokens}</span>
+              <span style={{ fontWeight: '800', fontSize: '13px', color: '#ea580c' }}>{humanTokens}</span>
             </div>
           </div>
         </div>
       )}
 
-      {/* 모바일 슬라이드 드로어 (사이드바) */}
+      {/* 모바일 드로어 */}
       {isMobile && (
         <>
-          {/* 오버레이 (어두운 배경) */}
-          <div 
+          <div
             onClick={() => setIsMobileMenuOpen(false)}
             style={{
               position: 'fixed', inset: 0, zIndex: 50,
-              backgroundColor: 'rgba(15, 23, 42, 0.4)',
+              backgroundColor: 'rgba(15,23,42,0.4)',
               opacity: isMobileMenuOpen ? 1 : 0,
               pointerEvents: isMobileMenuOpen ? 'auto' : 'none',
-              transition: 'opacity 0.3s ease'
+              transition: 'opacity 0.3s ease',
             }}
           />
-          {/* 실제 드로어 메뉴 */}
           <div style={{
             position: 'fixed', top: 0, bottom: 0, left: 0, zIndex: 60,
             width: '280px', backgroundColor: '#ffffff',
@@ -205,12 +271,12 @@ export default function Dashboard({ session }: DashboardProps) {
             transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             boxShadow: isMobileMenuOpen ? '4px 0 24px rgba(0,0,0,0.1)' : 'none',
           }}>
-            <SidebarContent />
+            <SidebarContent {...sidebarProps} onClose={() => setIsMobileMenuOpen(false)} />
           </div>
         </>
       )}
 
-      {/* 데스크탑/태블릿 고정 사이드바 */}
+      {/* 데스크탑/태블릿 사이드바 */}
       {!isMobile && (
         <div style={{
           width: isTablet ? '220px' : '280px',
@@ -219,16 +285,16 @@ export default function Dashboard({ session }: DashboardProps) {
           display: 'flex', flexDirection: 'column',
           position: 'sticky', top: 0, height: '100vh', flexShrink: 0,
         }}>
-          <SidebarContent />
+          <SidebarContent {...sidebarProps} />
         </div>
       )}
 
-      {/* 메인 콘텐츠 영역 */}
+      {/* 메인 콘텐츠 */}
       <div style={{
         flexGrow: 1,
         padding: isMobile ? '24px 16px 40px' : isTablet ? '32px' : '56px',
         maxWidth: '1200px', margin: '0 auto', width: '100%',
-        boxSizing: 'border-box'
+        boxSizing: 'border-box',
       }}>
         <div style={{ marginBottom: isMobile ? '24px' : '40px' }}>
           <h1 style={{
@@ -238,7 +304,9 @@ export default function Dashboard({ session }: DashboardProps) {
           }}>
             환영해요, {session.user.email?.split('@')[0]}님!
           </h1>
-          <p style={{ margin: 0, color: '#64748b', fontSize: isMobile ? '14px' : '16px' }}>오늘도 목표를 향해 나침반을 맞춰보세요.</p>
+          <p style={{ margin: 0, color: '#64748b', fontSize: isMobile ? '14px' : '16px' }}>
+            오늘도 목표를 향해 나침반을 맞춰보세요.
+          </p>
         </div>
 
         {!isOnboarded ? (
