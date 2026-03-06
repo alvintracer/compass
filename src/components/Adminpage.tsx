@@ -4,26 +4,17 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 import ReactMarkdown from 'react-markdown';
 import PromptManager from './PromptManager';
+import AdmissionUploader from './AdmissionUploader';
+import AdmissionViewer from './AdmissionViewer';
 import {
   Compass, Loader2, Check, Inbox, Send, UserCheck, Mic,
   FileEdit, RefreshCw, ImagePlus, Users, ChevronRight,
   ChevronLeft, Pencil, Save, X, Image as ImageIcon,
-  MessageCircle, User, Zap,
+  MessageCircle, User, Zap, Plus, Minus,
 } from 'lucide-react';
 
 interface AdminPageProps {
   session: Session;
-}
-
-// ── 공통 반응형 Hook ────────────────────────────────────────────────────────
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-  return isMobile;
 }
 
 // ── 기존 타입 ──────────────────────────────────────────────────────────────
@@ -44,7 +35,7 @@ interface InterviewRequest {
 type Request = RecordRequest | InterviewRequest;
 
 // ── 학생관리 타입 ──────────────────────────────────────────────────────────
-interface StudentProfile { id: string; name: string; email: string; created_at: string; }
+interface StudentProfile { id: string; name: string; email: string; created_at: string; ai_tokens?: number; human_tokens?: number; }
 interface IdentityDoc    { id: string; content: string; status: string; updated_at: string; }
 interface InterviewQnA   {
   id: string; question: string; answer_text: string;
@@ -61,9 +52,35 @@ const formatDate = (d: string) => {
 
 // ── 학생 상세 패널 ─────────────────────────────────────────────────────────
 function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBack: () => void }) {
-  const isMobile = useIsMobile();
   const [tab, setTab]             = useState<'identity' | 'interview' | 'schoolrecord' | 'messages'>('identity');
   const [isLoading, setIsLoading] = useState(true);
+
+  // 토큰
+  const [aiTokens, setAiTokens]       = useState<number>(student.ai_tokens ?? 0);
+  const [humanTokens, setHumanTokens] = useState<number>(student.human_tokens ?? 0);
+  const [tokenSaving, setTokenSaving] = useState(false);
+  const [tokenInput, setTokenInput]   = useState({ ai: '', human: '' });
+
+  const adjustToken = async (type: 'ai' | 'human', delta: number) => {
+    const current = type === 'ai' ? aiTokens : humanTokens;
+    const next = Math.max(0, current + delta);
+    setTokenSaving(true);
+    const field = type === 'ai' ? 'ai_tokens' : 'human_tokens';
+    await supabase.from('profiles').update({ [field]: next }).eq('id', student.id);
+    if (type === 'ai') setAiTokens(next); else setHumanTokens(next);
+    setTokenSaving(false);
+  };
+
+  const setTokenDirect = async (type: 'ai' | 'human') => {
+    const val = parseInt(type === 'ai' ? tokenInput.ai : tokenInput.human, 10);
+    if (isNaN(val) || val < 0) return;
+    setTokenSaving(true);
+    const field = type === 'ai' ? 'ai_tokens' : 'human_tokens';
+    await supabase.from('profiles').update({ [field]: val }).eq('id', student.id);
+    if (type === 'ai') { setAiTokens(val); setTokenInput(p => ({ ...p, ai: '' })); }
+    else { setHumanTokens(val); setTokenInput(p => ({ ...p, human: '' })); }
+    setTokenSaving(false);
+  };
 
   // 정의서
   const [identityDoc, setIdentityDoc]         = useState<IdentityDoc | null>(null);
@@ -92,12 +109,14 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
 
   useEffect(() => { loadAll(); }, [student.id]);
 
+  // 메세지 탭 전환 시 로드
   useEffect(() => {
     if (tab === 'messages') loadMessages(msgRole);
   }, [tab, msgRole]);
 
   const loadAll = async () => {
     setIsLoading(true);
+
     // 정의서
     const { data: doc } = await supabase
       .from('identity_documents').select('id, content, status, updated_at')
@@ -168,6 +187,7 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
       m.sender === role || (m.sender === 'consultant' && m.receiver_role === role)
     );
     setMessages(filtered);
+    // 안 읽은 학생/부모 메세지 읽음 처리
     const unread = filtered.filter((m: AdminMessage) => m.sender === role && !m.is_read).map((m: AdminMessage) => m.id);
     if (unread.length > 0) await supabase.from('messages').update({ is_read: true }).in('id', unread);
     setMsgLoading(false);
@@ -190,45 +210,128 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
   };
 
   const TAB = (active: boolean) => ({
-    flex: 1, padding: '11px 0', border: 'none', cursor: 'pointer', fontSize: isMobile ? '12px' : '13px', fontWeight: '700' as const,
+    flex: 1, padding: '11px 0', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '700' as const,
     borderBottom: active ? '2px solid #2563eb' : '2px solid transparent',
     backgroundColor: 'transparent', color: active ? '#2563eb' : '#94a3b8',
-    whiteSpace: 'nowrap' as const, minWidth: isMobile ? '80px' : 'auto'
   });
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', width: '100%' }}>
+    <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+
       {/* 상단 헤더 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: isMobile ? '16px' : '24px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
         <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#ffffff', color: '#475569', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
-          <ChevronLeft size={15} /> 목록
+          <ChevronLeft size={15} /> 목록으로
         </button>
         <div>
-          <h2 style={{ margin: 0, fontSize: isMobile ? '18px' : '20px', fontWeight: '800', color: '#0f172a' }}>{student.name || '이름 없음'}</h2>
+          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#0f172a' }}>{student.name || '이름 없음'}</h2>
           <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>{student.email}</p>
         </div>
       </div>
 
-      {/* 탭 (모바일에서는 가로 스크롤 허용) */}
-      <div style={{ display: 'flex', overflowX: 'auto', backgroundColor: '#ffffff', borderRadius: '14px 14px 0 0', border: '1px solid #e2e8f0', borderBottom: 'none' }}>
+      {/* 토큰 관리 카드 */}
+      <div style={{ marginBottom: '20px', padding: '18px 22px', backgroundColor: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'row', gap: '12px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+          <Zap size={15} color="#f59e0b" />
+          <span style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>토큰 관리</span>
+          {tokenSaving && <Loader2 size={13} color="#94a3b8" className="animate-spin" style={{ display: 'inline-block' }} />}
+        </div>
+        <div style={{ display: 'flex', gap: '12px', flex: 1, flexWrap: 'wrap' }}>
+
+          {/* AI 토큰 */}
+          <div style={{ flex: 1, minWidth: '160px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '12px', fontWeight: '700', color: '#2563eb' }}>⚡ AI 토큰</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <button onClick={() => adjustToken('ai', -1)} disabled={tokenSaving || aiTokens <= 0}
+                  style={{ width: '24px', height: '24px', borderRadius: '6px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', cursor: aiTokens <= 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: aiTokens <= 0 ? 0.4 : 1 }}>
+                  <Minus size={11} color="#475569" />
+                </button>
+                <span style={{ fontSize: '16px', fontWeight: '800', color: '#2563eb', minWidth: '32px', textAlign: 'center' }}>{aiTokens}</span>
+                <button onClick={() => adjustToken('ai', 1)} disabled={tokenSaving}
+                  style={{ width: '24px', height: '24px', borderRadius: '6px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Plus size={11} color="#475569" />
+                </button>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {[5, 10, 30].map(n => (
+                <button key={n} onClick={() => adjustToken('ai', n)} disabled={tokenSaving}
+                  style={{ flex: 1, padding: '5px 0', borderRadius: '6px', border: '1px solid #bfdbfe', backgroundColor: '#eff6ff', color: '#2563eb', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>
+                  +{n}
+                </button>
+              ))}
+              <input type="number" value={tokenInput.ai} onChange={e => setTokenInput(p => ({ ...p, ai: e.target.value }))}
+                placeholder="직접" min="0"
+                style={{ width: '48px', padding: '5px 4px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px', outline: 'none', textAlign: 'center' }}
+                onKeyDown={e => e.key === 'Enter' && setTokenDirect('ai')} />
+              <button onClick={() => setTokenDirect('ai')} disabled={!tokenInput.ai || tokenSaving}
+                style={{ padding: '5px 8px', borderRadius: '6px', border: 'none', backgroundColor: tokenInput.ai ? '#2563eb' : '#e2e8f0', color: '#fff', fontSize: '11px', fontWeight: '700', cursor: tokenInput.ai ? 'pointer' : 'not-allowed' }}>
+                설정
+              </button>
+            </div>
+          </div>
+
+          <div style={{ width: '1px', backgroundColor: '#e2e8f0', alignSelf: 'stretch', display: 'block' }} />
+
+          {/* 휴먼 토큰 */}
+          <div style={{ flex: 1, minWidth: '160px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '12px', fontWeight: '700', color: '#ea580c' }}>👤 휴먼 토큰</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <button onClick={() => adjustToken('human', -1)} disabled={tokenSaving || humanTokens <= 0}
+                  style={{ width: '24px', height: '24px', borderRadius: '6px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', cursor: humanTokens <= 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: humanTokens <= 0 ? 0.4 : 1 }}>
+                  <Minus size={11} color="#475569" />
+                </button>
+                <span style={{ fontSize: '16px', fontWeight: '800', color: '#ea580c', minWidth: '32px', textAlign: 'center' }}>{humanTokens}</span>
+                <button onClick={() => adjustToken('human', 1)} disabled={tokenSaving}
+                  style={{ width: '24px', height: '24px', borderRadius: '6px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Plus size={11} color="#475569" />
+                </button>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {[1, 3, 5].map(n => (
+                <button key={n} onClick={() => adjustToken('human', n)} disabled={tokenSaving}
+                  style={{ flex: 1, padding: '5px 0', borderRadius: '6px', border: '1px solid #fed7aa', backgroundColor: '#fff7ed', color: '#ea580c', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>
+                  +{n}
+                </button>
+              ))}
+              <input type="number" value={tokenInput.human} onChange={e => setTokenInput(p => ({ ...p, human: e.target.value }))}
+                placeholder="직접" min="0"
+                style={{ width: '48px', padding: '5px 4px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px', outline: 'none', textAlign: 'center' }}
+                onKeyDown={e => e.key === 'Enter' && setTokenDirect('human')} />
+              <button onClick={() => setTokenDirect('human')} disabled={!tokenInput.human || tokenSaving}
+                style={{ padding: '5px 8px', borderRadius: '6px', border: 'none', backgroundColor: tokenInput.human ? '#ea580c' : '#e2e8f0', color: '#fff', fontSize: '11px', fontWeight: '700', cursor: tokenInput.human ? 'pointer' : 'not-allowed' }}>
+                설정
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      {/* 탭 */}
+      <div style={{ display: 'flex', backgroundColor: '#ffffff', borderRadius: '14px 14px 0 0', border: '1px solid #e2e8f0', borderBottom: 'none' }}>
         <button style={TAB(tab === 'identity')}     onClick={() => setTab('identity')}>📋 정의서</button>
         <button style={TAB(tab === 'interview')}    onClick={() => setTab('interview')}>🎤 면접 Q&A</button>
         <button style={TAB(tab === 'schoolrecord')} onClick={() => setTab('schoolrecord')}>📚 생활기록부</button>
         <button style={TAB(tab === 'messages')}     onClick={() => setTab('messages')}>💬 메세지</button>
       </div>
 
-      <div style={{ backgroundColor: '#ffffff', borderRadius: '0 0 14px 14px', border: '1px solid #e2e8f0', borderTop: 'none', padding: isMobile ? '16px' : '28px' }}>
+      <div style={{ backgroundColor: '#ffffff', borderRadius: '0 0 14px 14px', border: '1px solid #e2e8f0', borderTop: 'none', padding: '28px' }}>
         {isLoading ? (
           <div style={{ textAlign: 'center', padding: '48px' }}>
-            <Loader2 size={28} color="#94a3b8" className="animate-spin" style={{ display: 'inline-block' }} />
+            <Loader2 size={28} color="#94a3b8" style={{ display: 'inline-block' }} />
           </div>
         ) : tab === 'identity' ? (
-          /* ── 정의서 탭 ── */
+
+          // ── 정의서 탭 ────────────────────────────────────────────────────
           !identityDoc ? (
             <div style={{ textAlign: 'center', padding: '48px', color: '#94a3b8', fontSize: '14px' }}>정의서가 없어요</div>
           ) : (
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <span style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a' }}>나의 정의서</span>
                   <span style={{ fontSize: '12px', padding: '3px 10px', borderRadius: '20px', backgroundColor: '#f1f5f9', color: '#64748b', fontWeight: '600' }}>{identityDoc.status}</span>
@@ -242,7 +345,7 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
                       </button>
                       <button onClick={saveIdentity} disabled={savingIdentity}
                         style={{ padding: '8px 14px', borderRadius: '8px', border: 'none', backgroundColor: '#0f172a', color: '#ffffff', fontSize: '13px', fontWeight: '700', cursor: savingIdentity ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '5px', opacity: savingIdentity ? 0.7 : 1 }}>
-                        {savingIdentity ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} 저장
+                        {savingIdentity ? <Loader2 size={13} /> : <Save size={13} />} 저장
                       </button>
                     </>
                   ) : (
@@ -255,9 +358,9 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
               </div>
               {editingIdentity ? (
                 <textarea value={identityDraft} onChange={e => setIdentityDraft(e.target.value)}
-                  style={{ width: '100%', minHeight: isMobile ? '300px' : '480px', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box', lineHeight: 1.8, color: '#334155' }} />
+                  style={{ width: '100%', minHeight: '480px', padding: '20px', borderRadius: '12px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box', lineHeight: 1.8, color: '#334155' }} />
               ) : (
-                <div style={{ backgroundColor: '#f8fafc', padding: isMobile ? '16px' : '28px', borderRadius: '12px', fontSize: '14px', lineHeight: 1.9, color: '#334155', border: '1px solid #f1f5f9', overflowX: 'auto' }}>
+                <div style={{ backgroundColor: '#f8fafc', padding: '28px', borderRadius: '12px', fontSize: '14px', lineHeight: 1.9, color: '#334155', border: '1px solid #f1f5f9' }}>
                   <div className="markdown-body"><ReactMarkdown>{identityDoc.content}</ReactMarkdown></div>
                 </div>
               )}
@@ -266,7 +369,8 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
           )
 
         ) : tab === 'interview' ? (
-          /* ── 면접 Q&A 탭 ── */
+
+          // ── 면접 Q&A 탭 ─────────────────────────────────────────────────
           editingQna && selectedQna ? (
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -276,7 +380,7 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
                 </button>
                 <button onClick={saveQna} disabled={savingQna}
                   style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#0f172a', color: '#ffffff', fontSize: '13px', fontWeight: '700', cursor: savingQna ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', opacity: savingQna ? 0.7 : 1 }}>
-                  {savingQna ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} 저장
+                  {savingQna ? <Loader2 size={13} /> : <Save size={13} />} 저장
                 </button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -302,9 +406,11 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {qnas.map(qna => (
                   <div key={qna.id}
-                    style={{ padding: isMobile ? '14px' : '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', transition: 'all 0.15s' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexDirection: isMobile ? 'column' : 'row' }}>
-                      <div style={{ flex: 1, minWidth: 0, width: '100%' }}>
+                    style={{ padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', transition: 'all 0.15s' }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = '#2563eb'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = '#e2e8f0'}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
                         {qna.path_title && (
                           <span style={{ fontSize: '11px', color: '#2563eb', backgroundColor: '#eff6ff', padding: '2px 8px', borderRadius: '5px', fontWeight: '600', marginBottom: '6px', display: 'inline-block' }}>{qna.path_title}</span>
                         )}
@@ -314,7 +420,7 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
                           {qna.answer_text}
                         </p>
                       </div>
-                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center', alignSelf: isMobile ? 'flex-end' : 'flex-start' }}>
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
                         <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', fontWeight: '700',
                           backgroundColor: qna.status === 'completed' ? '#dcfce7' : '#fef3c7',
                           color: qna.status === 'completed' ? '#16a34a' : '#d97706' }}>
@@ -333,9 +439,14 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
             )
           )
 
-        ) : tab === 'messages' ? (
-          /* ── 메세지 탭 ── */
+        ) : (
+
+          // ── 생활기록부 탭 ────────────────────────────────────────────────
+          tab === 'messages' ? (
+
+          // ── 메세지 탭 ────────────────────────────────────────────────────
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* 학생 / 부모 탭 */}
             <div style={{ display: 'flex', gap: '8px' }}>
               {(['student', 'parent'] as const).map(role => {
                 const isActive = msgRole === role;
@@ -348,7 +459,7 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
                     border: `2px solid ${isActive ? color : '#e2e8f0'}`,
                     backgroundColor: isActive ? bg : '#ffffff',
                     color: isActive ? color : '#64748b',
-                    fontSize: '13px', fontWeight: '700', cursor: 'pointer', flex: isMobile ? 1 : 'none', justifyContent: 'center'
+                    fontSize: '13px', fontWeight: '700', cursor: 'pointer',
                   }}>
                     {role === 'student' ? <User size={14} /> : <Users size={14} />}
                     {role === 'student' ? '학생' : '부모님'}
@@ -357,9 +468,10 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
               })}
             </div>
 
+            {/* 메세지 목록 */}
             <div style={{ height: '380px', overflowY: 'auto', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {msgLoading ? (
-                <div style={{ textAlign: 'center', padding: '48px' }}><Loader2 size={22} color="#94a3b8" className="animate-spin" style={{ display: 'inline-block' }} /></div>
+                <div style={{ textAlign: 'center', padding: '48px' }}><Loader2 size={22} color="#94a3b8" style={{ display: 'inline-block' }} /></div>
               ) : messages.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '48px', color: '#94a3b8' }}>
                   <MessageCircle size={32} strokeWidth={1.5} style={{ marginBottom: '10px' }} />
@@ -375,7 +487,7 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
                         {msgRole === 'student' ? <User size={13} color={roleColor} /> : <Users size={13} color={roleColor} />}
                       </div>
                     )}
-                    <div style={{ maxWidth: isMobile ? '85%' : '65%' }}>
+                    <div style={{ maxWidth: '65%' }}>
                       {!isConsultant && <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#64748b', fontWeight: '600' }}>{msgRole === 'student' ? '학생' : '부모님'}</p>}
                       <div style={{
                         padding: '9px 13px',
@@ -399,31 +511,31 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
               <div ref={bottomMsgRef} />
             </div>
 
+            {/* 입력창 */}
             <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
               <textarea
                 value={msgInput}
                 onChange={e => setMsgInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                placeholder={`${msgRole === 'student' ? '학생' : '부모님'}에게 메세지 전송`}
+                placeholder={`${msgRole === 'student' ? '학생' : '부모님'}에게 메세지 전송 (Enter로 전송)`}
                 rows={2}
-                style={{ flex: 1, padding: '11px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none', resize: 'none', fontFamily: 'inherit', lineHeight: 1.5, boxSizing: 'border-box' }}
+                style={{ flex: 1, padding: '11px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none', resize: 'none', fontFamily: 'inherit', lineHeight: 1.5 }}
               />
               <button onClick={sendMessage} disabled={!msgInput.trim() || msgSending}
-                style={{ padding: '11px 18px', borderRadius: '10px', border: 'none', backgroundColor: msgInput.trim() ? '#0f172a' : '#e2e8f0', color: '#ffffff', fontSize: '13px', fontWeight: '700', cursor: msgInput.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, height: '44px' }}>
-                {msgSending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                {isMobile ? '' : '전송'}
+                style={{ padding: '11px 18px', borderRadius: '10px', border: 'none', backgroundColor: msgInput.trim() ? '#0f172a' : '#e2e8f0', color: '#ffffff', fontSize: '13px', fontWeight: '700', cursor: msgInput.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, transition: 'all 0.15s' }}>
+                {msgSending ? <Loader2 size={15} /> : <Send size={15} />}
+                전송
               </button>
             </div>
           </div>
 
         ) : tab === 'schoolrecord' ? (
-          /* ── 생활기록부 탭 ── */
           <>
             {previewImg && (
-              <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+              <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 onClick={() => setPreviewImg(null)}>
-                <div style={{ position: 'relative', width: '100%', maxWidth: '800px', display: 'flex', justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
-                  <img src={previewImg} alt="생기부" style={{ maxWidth: '100%', maxHeight: '85vh', borderRadius: '12px', objectFit: 'contain' }} />
+                <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+                  <img src={previewImg} alt="생기부" style={{ maxWidth: '85vw', maxHeight: '85vh', borderRadius: '12px', objectFit: 'contain' }} />
                   <button onClick={() => setPreviewImg(null)}
                     style={{ position: 'absolute', top: '-40px', right: 0, background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '8px', padding: '6px 14px', color: '#ffffff', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>닫기</button>
                 </div>
@@ -437,10 +549,12 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
             ) : (
               <>
                 <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#64748b', fontWeight: '600' }}>총 {srImages.length}장 · 클릭하면 크게 볼 수 있어요</p>
-                <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '120px' : '160px'}, 1fr))`, gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px' }}>
                   {srImages.map((img, idx) => (
                     <div key={img.id} onClick={() => setPreviewImg(img.public_url)}
-                      style={{ borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden', cursor: 'pointer' }}>
+                      style={{ borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden', cursor: 'pointer', transition: 'all 0.15s' }}
+                      onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.1)'}
+                      onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}>
                       <div style={{ position: 'relative', aspectRatio: '3/4', backgroundColor: '#f8fafc', overflow: 'hidden' }}>
                         <img src={img.public_url} alt={img.file_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         <div style={{ position: 'absolute', bottom: '8px', left: '8px', backgroundColor: 'rgba(15,23,42,0.75)', borderRadius: '5px', padding: '2px 8px', fontSize: '12px', fontWeight: '700', color: '#ffffff' }}>{idx + 1}p</div>
@@ -454,7 +568,7 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
               </>
             )}
           </>
-        ) : null}
+        ) : null)}
       </div>
     </div>
   );
@@ -462,7 +576,6 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
 
 // ── 메인 AdminPage ─────────────────────────────────────────────────────────
 export default function AdminPage({ session }: AdminPageProps) {
-  const isMobile = useIsMobile();
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
   const [requests, setRequests]         = useState<Request[]>([]);
   const [isLoading, setIsLoading]       = useState(true);
@@ -478,7 +591,7 @@ export default function AdminPage({ session }: AdminPageProps) {
   const [notifyStatus, setNotifyStatus]         = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
 
   // 학생관리
-  const [mainTab, setMainTab]               = useState<'requests' | 'students' | 'prompts'>('requests');
+  const [mainTab, setMainTab]               = useState<'requests' | 'students' | 'prompts' | 'admission' | 'admissionView'>('requests');
   const [students, setStudents]             = useState<StudentProfile[]>([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<StudentProfile | null>(null);
@@ -530,7 +643,7 @@ export default function AdminPage({ session }: AdminPageProps) {
   const fetchStudents = async () => {
     setStudentsLoading(true);
     const { data } = await supabase
-      .from('profiles').select('id, name, email, created_at, role')
+      .from('profiles').select('id, name, email, created_at, role, ai_tokens, human_tokens')
       .or('role.eq.student,role.is.null')
       .order('created_at', { ascending: false });
     setStudents((data as StudentProfile[]) ?? []);
@@ -595,22 +708,17 @@ export default function AdminPage({ session }: AdminPageProps) {
       alert(notifyError
         ? '✅ 첨삭 완료! (이메일 발송 실패 — Resend 설정을 확인해 주세요)'
         : '✅ 첨삭 완료! 학생에게 이메일이 발송됐어요.');
-      if (isMobile) setSelectedId(null); // 모바일에서 전송 완료 후 목록으로
     } catch (err: any) { alert('오류: ' + err.message); }
     finally { setIsSubmitting(false); }
   };
 
-  const filtered = requests.filter(r => {
+  const filtered     = requests.filter(r => {
     const s = filter === 'all' ? true : filter === 'pending' ? r.status === 'submitted' : r.status === 'completed';
     const t = typeFilter === 'all' ? true : typeFilter === r.type;
     return s && t;
   });
   const pendingCount = requests.filter(r => r.status === 'submitted').length;
   const selectedReq  = requests.find(r => r.id === selectedId);
-
-  // 모바일 UI 분기 조건
-  const showSidebar = !isMobile || (isMobile && !selectedId && !selectedStudent && mainTab !== 'prompts');
-  const showContent = !isMobile || (isMobile && (selectedId || selectedStudent || mainTab === 'prompts'));
 
   if (isAuthorized === null) return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -627,48 +735,63 @@ export default function AdminPage({ session }: AdminPageProps) {
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', height: '100vh', backgroundColor: '#f8fafc' }}>
-      
-      {/* ── 사이드바 (목록) ── */}
-      <div style={{ 
-        width: isMobile ? '100%' : '320px', 
-        backgroundColor: '#ffffff', 
-        borderRight: isMobile ? 'none' : '1px solid #e2e8f0', 
-        display: showSidebar ? 'flex' : 'none', 
-        flexDirection: 'column',
-        height: isMobile ? '100vh' : 'auto'
-      }}>
+    <div style={{ display: 'flex', height: '100vh', backgroundColor: '#f8fafc' }}>
+
+      {/* ── 사이드바 ── */}
+      <div style={{ width: '320px', backgroundColor: '#ffffff', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
+
         {/* 헤더 */}
         <div style={{ padding: '28px 24px 16px', borderBottom: '1px solid #e2e8f0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
             <Compass size={24} color="#2563eb" strokeWidth={2.5} />
             <span style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>Compass Admin</span>
           </div>
-          <div style={{ display: 'flex', backgroundColor: '#f1f5f9', borderRadius: '10px', padding: '3px' }}>
-            <button onClick={() => setMainTab('requests')} style={{
-              flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700',
-              backgroundColor: mainTab === 'requests' ? '#ffffff' : 'transparent',
-              color: mainTab === 'requests' ? '#0f172a' : '#94a3b8',
-              boxShadow: mainTab === 'requests' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-            }}>
-              📬 첨삭요청{pendingCount > 0 ? ` (${pendingCount})` : ''}
-            </button>
-            <button onClick={() => { setMainTab('students'); setSelectedStudent(null); }} style={{
-              flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700',
-              backgroundColor: mainTab === 'students' ? '#ffffff' : 'transparent',
-              color: mainTab === 'students' ? '#0f172a' : '#94a3b8',
-              boxShadow: mainTab === 'students' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-            }}>
-              👤 학생관리
-            </button>
-            <button onClick={() => setMainTab('prompts')} style={{
-              flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700',
-              backgroundColor: mainTab === 'prompts' ? '#ffffff' : 'transparent',
-              color: mainTab === 'prompts' ? '#0f172a' : '#94a3b8',
-              boxShadow: mainTab === 'prompts' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-            }}>
-              ⚡ 프롬프트
-            </button>
+          {/* 메인 탭 토글 — 2행 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ display: 'flex', backgroundColor: '#f1f5f9', borderRadius: '10px', padding: '3px' }}>
+              <button onClick={() => setMainTab('requests')} style={{
+                flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700',
+                backgroundColor: mainTab === 'requests' ? '#ffffff' : 'transparent',
+                color: mainTab === 'requests' ? '#0f172a' : '#94a3b8',
+                boxShadow: mainTab === 'requests' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+              }}>
+                📬 첨삭요청{pendingCount > 0 ? ` (${pendingCount})` : ''}
+              </button>
+              <button onClick={() => { setMainTab('students'); setSelectedStudent(null); }} style={{
+                flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700',
+                backgroundColor: mainTab === 'students' ? '#ffffff' : 'transparent',
+                color: mainTab === 'students' ? '#0f172a' : '#94a3b8',
+                boxShadow: mainTab === 'students' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+              }}>
+                👤 학생관리
+              </button>
+            </div>
+            <div style={{ display: 'flex', backgroundColor: '#f1f5f9', borderRadius: '10px', padding: '3px' }}>
+              <button onClick={() => setMainTab('prompts')} style={{
+                flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700',
+                backgroundColor: mainTab === 'prompts' ? '#ffffff' : 'transparent',
+                color: mainTab === 'prompts' ? '#0f172a' : '#94a3b8',
+                boxShadow: mainTab === 'prompts' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+              }}>
+                ⚡ 프롬프트
+              </button>
+              <button onClick={() => setMainTab('admission')} style={{
+                flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700',
+                backgroundColor: mainTab === 'admission' ? '#ffffff' : 'transparent',
+                color: mainTab === 'admission' ? '#0f172a' : '#94a3b8',
+                boxShadow: mainTab === 'admission' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+              }}>
+                📤 입시업로드
+              </button>
+              <button onClick={() => setMainTab('admissionView')} style={{
+                flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700',
+                backgroundColor: mainTab === 'admissionView' ? '#ffffff' : 'transparent',
+                color: mainTab === 'admissionView' ? '#0f172a' : '#94a3b8',
+                boxShadow: mainTab === 'admissionView' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+              }}>
+                📋 입시결과
+              </button>
+            </div>
           </div>
         </div>
 
@@ -714,8 +837,8 @@ export default function AdminPage({ session }: AdminPageProps) {
               ) : filtered.map(req => (
                 <div key={req.id} onClick={() => handleSelect(req)} style={{
                   padding: '16px 20px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer',
-                  backgroundColor: selectedId === req.id && !isMobile ? '#eff6ff' : '#ffffff',
-                  borderLeft: selectedId === req.id && !isMobile ? '3px solid #2563eb' : '3px solid transparent',
+                  backgroundColor: selectedId === req.id ? '#eff6ff' : '#ffffff',
+                  borderLeft: selectedId === req.id ? '3px solid #2563eb' : '3px solid transparent',
                   transition: 'all 0.15s',
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
@@ -753,6 +876,7 @@ export default function AdminPage({ session }: AdminPageProps) {
             </div>
           </>
         ) : (
+          // 학생 목록
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {studentsLoading ? (
               <div style={{ padding: '40px', textAlign: 'center' }}>
@@ -767,8 +891,8 @@ export default function AdminPage({ session }: AdminPageProps) {
               <div key={s.id} onClick={() => setSelectedStudent(s)} style={{
                 padding: '14px 20px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer',
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                backgroundColor: selectedStudent?.id === s.id && !isMobile ? '#eff6ff' : '#ffffff',
-                borderLeft: selectedStudent?.id === s.id && !isMobile ? '3px solid #2563eb' : '3px solid transparent',
+                backgroundColor: selectedStudent?.id === s.id ? '#eff6ff' : '#ffffff',
+                borderLeft: selectedStudent?.id === s.id ? '3px solid #2563eb' : '3px solid transparent',
                 transition: 'all 0.15s',
               }}>
                 <div>
@@ -782,24 +906,14 @@ export default function AdminPage({ session }: AdminPageProps) {
         )}
       </div>
 
-      {/* ── 메인 콘텐츠 (상세) ── */}
-      <div style={{ 
-        flex: 1, 
-        overflowY: 'auto', 
-        padding: isMobile ? '20px' : '40px',
-        display: showContent ? 'block' : 'none',
-        height: isMobile ? '100vh' : 'auto',
-        boxSizing: 'border-box'
-      }}>
-        {mainTab === 'prompts' ? (
-          <>
-            {isMobile && (
-              <button onClick={() => setMainTab('requests')} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#ffffff', color: '#475569', fontSize: '13px', fontWeight: '600', cursor: 'pointer', marginBottom: '16px' }}>
-                <ChevronLeft size={15} /> 목록으로
-              </button>
-            )}
-            <PromptManager />
-          </>
+      {/* ── 메인 콘텐츠 ── */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '40px' }}>
+        {mainTab === 'admission' ? (
+          <AdmissionUploader />
+        ) : mainTab === 'admissionView' ? (
+          <AdmissionViewer />
+        ) : mainTab === 'prompts' ? (
+          <PromptManager />
         ) : mainTab === 'students' ? (
           !selectedStudent ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8' }}>
@@ -811,22 +925,18 @@ export default function AdminPage({ session }: AdminPageProps) {
             <StudentDetailPanel student={selectedStudent} onBack={() => setSelectedStudent(null)} />
           )
         ) : (
+
+          // ── 기존 첨삭 요청 상세 (100% 원본 유지) ──────────────────────
           !selectedReq ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8' }}>
               <Inbox size={48} strokeWidth={1.5} style={{ marginBottom: '16px' }} />
               <p style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>왼쪽에서 요청을 선택해 주세요</p>
             </div>
           ) : (
-            <div style={{ maxWidth: '760px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: isMobile ? '16px' : '24px' }}>
-              
-              {isMobile && (
-                <button onClick={() => setSelectedId(null)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#ffffff', color: '#475569', fontSize: '13px', fontWeight: '600', cursor: 'pointer', width: 'fit-content' }}>
-                  <ChevronLeft size={15} /> 목록으로
-                </button>
-              )}
+            <div style={{ maxWidth: '760px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-              <div style={{ backgroundColor: '#ffffff', padding: isMobile ? '20px' : '28px', borderRadius: '18px', border: '1px solid #e2e8f0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '12px' : '0' }}>
+              <div style={{ backgroundColor: '#ffffff', padding: '28px', borderRadius: '18px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     {selectedReq.type === 'record'
                       ? <><FileEdit size={18} color="#7c3aed" /><span style={{ fontSize: '16px', fontWeight: '800', color: '#7c3aed' }}>생기부 첨삭</span><span style={{ fontSize: '14px', color: '#64748b', fontWeight: '600' }}>— {selectedReq.category}</span></>
@@ -837,7 +947,7 @@ export default function AdminPage({ session }: AdminPageProps) {
                     <UserCheck size={14} />
                     <span>{selectedReq.userEmail}</span>
                     <span style={{ color: '#cbd5e1' }}>·</span>
-                    <span>{formatDate(selectedReq.created_at).split(' ')[0]}</span>
+                    <span>{formatDate(selectedReq.created_at)}</span>
                   </div>
                 </div>
 
@@ -874,7 +984,7 @@ export default function AdminPage({ session }: AdminPageProps) {
                 )}
               </div>
 
-              <div style={{ backgroundColor: '#ffffff', padding: isMobile ? '20px' : '28px', borderRadius: '18px', border: '1px solid #e2e8f0' }}>
+              <div style={{ backgroundColor: '#ffffff', padding: '28px', borderRadius: '18px', border: '1px solid #e2e8f0' }}>
                 <p style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>
                   {selectedReq.status === 'completed' ? '작성된 첨삭 내용' : '첨삭 작성'}
                 </p>
@@ -908,7 +1018,7 @@ export default function AdminPage({ session }: AdminPageProps) {
                     </label>
                     {uploadedImageUrl ? (
                       <div style={{ position: 'relative', display: 'inline-block' }}>
-                        <img src={uploadedImageUrl} alt="첨부" style={{ maxWidth: '100%', borderRadius: '10px', border: '1px solid #e2e8f0' }} />
+                        <img src={uploadedImageUrl} alt="첨부" style={{ maxWidth: '300px', borderRadius: '10px', border: '1px solid #e2e8f0' }} />
                         <button onClick={() => setUploadedImageUrl(null)} style={{ position: 'absolute', top: '8px', right: '8px', width: '24px', height: '24px', borderRadius: '50%', border: 'none', backgroundColor: 'rgba(0,0,0,0.5)', color: '#ffffff', cursor: 'pointer', fontSize: '16px', lineHeight: 1 }}>×</button>
                       </div>
                     ) : (
@@ -926,13 +1036,13 @@ export default function AdminPage({ session }: AdminPageProps) {
                     style={{ width: '100%', padding: '16px', borderRadius: '12px', border: 'none', backgroundColor: '#0f172a', color: '#ffffff', fontSize: '15px', fontWeight: '700', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                     {isSubmitting
                       ? <><Loader2 size={18} className="animate-spin" />{notifyStatus === 'sending' ? ' 이메일 발송 중...' : ' 처리 중...'}</>
-                      : <><Send size={18} /> {isMobile ? '첨삭 완료 및 발송' : '첨삭 완료 — 학생에게 이메일 발송'}</>
+                      : <><Send size={18} /> 첨삭 완료 — 학생에게 이메일 발송</>
                     }
                   </button>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 20px', backgroundColor: '#f0fdf4', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
                     <Check size={18} color="#16a34a" />
-                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#166534' }}>첨삭 완료 — 이메일 발송됨</span>
+                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#166534' }}>첨삭 완료 — 학생에게 이메일이 발송됐습니다</span>
                   </div>
                 )}
               </div>

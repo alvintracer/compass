@@ -8,6 +8,76 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+// ── OpenAI 호출 (retry + timeout) ──────────────────────────────────────────
+async function callOpenAI(
+  apiKey: string,
+  body: Record<string, unknown>,
+  maxRetries = 3,
+  timeoutMs = 55000,
+): Promise<any> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      if (res.status === 429 || res.status >= 500) {
+        if (attempt < maxRetries) {
+          const wait = 2000 * (attempt + 1);
+          console.warn(
+            `OpenAI ${res.status}, ${wait}ms 대기 후 재시도 (${
+              attempt + 1
+            }/${maxRetries})`,
+          );
+          await new Promise((r) => setTimeout(r, wait));
+          continue;
+        }
+      }
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          `OpenAI API 에러: ${data.error?.message || res.status}`,
+        );
+      }
+      return data;
+    } catch (err: any) {
+      clearTimeout(timer);
+      if (err.name === "AbortError") {
+        if (attempt < maxRetries) {
+          console.warn(
+            `OpenAI 타임아웃, 재시도 (${attempt + 1}/${maxRetries})`,
+          );
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+        throw new Error("OpenAI 요청 시간 초과 (55초)");
+      }
+      if (attempt < maxRetries && !err.message?.includes("OpenAI API 에러")) {
+        console.warn(
+          `OpenAI 네트워크 오류, 재시도 (${
+            attempt + 1
+          }/${maxRetries}): ${err.message}`,
+        );
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("OpenAI 호출 실패: 최대 재시도 횟수 초과");
+}
+
 // ── 활성 프롬프트 조회 헬퍼 ────────────────────────────────────────────────
 const getActivePrompt = async (
   supabase: any,
@@ -76,28 +146,15 @@ serve(async (req) => {
       throw new Error("지원하지 않는 액션입니다.");
     }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage },
-        ],
-        temperature: 0.7,
-      }),
+    const data = await callOpenAI(OPENAI_API_KEY, {
+      model: "gpt-4.1-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      temperature: 0.7,
+      max_tokens: 4000,
     });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(
-        `OpenAI API 에러: ${data.error?.message || "알 수 없는 OpenAI 오류"}`,
-      );
-    }
 
     const editedContent = data.choices[0].message.content;
 

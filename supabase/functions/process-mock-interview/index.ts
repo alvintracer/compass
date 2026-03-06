@@ -7,6 +7,61 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+// ── OpenAI 호출 (retry + timeout) ──────────────────────────────────────────
+async function callOpenAIRaw(
+  url: string,
+  init: RequestInit,
+  maxRetries = 3,
+  timeoutMs = 55000,
+): Promise<Response> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(url, { ...init, signal: controller.signal });
+      clearTimeout(timer);
+
+      if (res.status === 429 || res.status >= 500) {
+        if (attempt < maxRetries) {
+          const wait = 2000 * (attempt + 1);
+          console.warn(
+            `OpenAI ${res.status}, ${wait}ms 대기 후 재시도 (${
+              attempt + 1
+            }/${maxRetries})`,
+          );
+          await new Promise((r) => setTimeout(r, wait));
+          continue;
+        }
+      }
+      return res;
+    } catch (err: any) {
+      clearTimeout(timer);
+      if (err.name === "AbortError") {
+        if (attempt < maxRetries) {
+          console.warn(
+            `OpenAI 타임아웃, 재시도 (${attempt + 1}/${maxRetries})`,
+          );
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+        throw new Error("OpenAI 요청 시간 초과 (55초)");
+      }
+      if (attempt < maxRetries) {
+        console.warn(
+          `OpenAI 네트워크 오류, 재시도 (${
+            attempt + 1
+          }/${maxRetries}): ${err.message}`,
+        );
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("OpenAI 호출 실패: 최대 재시도 횟수 초과");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -26,19 +81,22 @@ serve(async (req) => {
       // voice: 'onyx'(남성) | 'nova'(여성) — 기본값 onyx
       const selectedVoice = voice === "nova" ? "nova" : "onyx";
 
-      const response = await fetch("https://api.openai.com/v1/audio/speech", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
+      const response = await callOpenAIRaw(
+        "https://api.openai.com/v1/audio/speech",
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${OPENAI_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "tts-1",
+            voice: selectedVoice,
+            input: text,
+            speed: 0.95,
+          }),
         },
-        body: JSON.stringify({
-          model: "tts-1",
-          voice: selectedVoice,
-          input: text,
-          speed: 0.95,
-        }),
-      });
+      );
 
       if (!response.ok) {
         const err = await response.json();
@@ -78,7 +136,7 @@ serve(async (req) => {
       formData.append("model", "whisper-1");
       formData.append("language", "ko");
 
-      const response = await fetch(
+      const response = await callOpenAIRaw(
         "https://api.openai.com/v1/audio/transcriptions",
         {
           method: "POST",

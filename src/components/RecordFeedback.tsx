@@ -223,7 +223,18 @@ export default function RecordFeedback({ session }: RecordFeedbackProps) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '20px' : '32px' }}>
 
       {/* ── 작성 폼 ── */}
-      <div style={{ backgroundColor: '#ffffff', padding: isMobile ? '24px 20px' : '40px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+      <div style={{ backgroundColor: '#ffffff', padding: isMobile ? '24px 20px' : '40px', borderRadius: '20px', border: '1px solid #e2e8f0', position: 'relative', overflow: 'hidden' }}>
+
+        {/* AI 처리 로딩 오버레이 */}
+        {isSubmitting && (
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(6px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+            <div style={{ width: '56px', height: '56px', border: '4px solid #e2e8f0', borderTopColor: '#2563eb', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: '20px' }} />
+            <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#0f172a', fontWeight: '700' }}>AI가 결과물을 만들고 있어요</h3>
+            <p style={{ margin: 0, fontSize: '14px', color: '#64748b' }}>고품질 첨삭을 위해 20~40초 정도 소요됩니다...</p>
+          </div>
+        )}
+        <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+
         <div style={{ marginBottom: isMobile ? '24px' : '32px' }}>
           <h3 style={{ margin: '0 0 8px 0', fontSize: isMobile ? '20px' : '22px', color: '#0f172a', fontWeight: '800' }}>상시 생기부 첨삭소</h3>
           <p style={{ margin: 0, color: '#64748b', fontSize: isMobile ? '13px' : '15px' }}>수행평가, 세특 등 다듬고 싶은 내용을 올리면 완벽한 결과물로 만들어 드려요.</p>

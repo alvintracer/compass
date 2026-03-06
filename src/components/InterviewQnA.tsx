@@ -32,6 +32,7 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
   const [expandedQ, setExpandedQ] = useState<string | null>(null);
   
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isEvaluating, setIsEvaluating] = useState(false);
   const [isPathLoading, setIsPathLoading] = useState(true);
   // DB 중복 인서트 방지용 플래그
   const isInsertingRef = useRef(false);
@@ -214,11 +215,10 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
     }
 
     if (type === 'ai') {
+  setIsEvaluating(true);
   try {
     const { data: tokenRemaining, error: tokenError } = await supabase.rpc('decrement_ai_token', { target_user_id: session.user.id });
     if (tokenError) throw new Error('AI 토큰이 부족합니다.');
-
-    alert('🤖 AI가 답변을 분석하고 있습니다... 잠시만 기다려주세요.');
 
     const { data, error } = await supabase.functions.invoke('process-interview', {
       body: { action: 'evaluate_answer', questionText: q.question, answerText: q.answer_text }
@@ -251,6 +251,8 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
 
   } catch (err: any) {
     alert(err.message);
+  } finally {
+    setIsEvaluating(false);
   }
 } else {
       // 휴먼 컨설턴트 (한태우) - 100 휴먼 토큰 소모
@@ -281,7 +283,27 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
   }
 
   return (
-    <div style={{ backgroundColor: '#ffffff', padding: isMobile ? '20px' : '40px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+    <div style={{ backgroundColor: '#ffffff', padding: isMobile ? '20px' : '40px', borderRadius: '20px', border: '1px solid #e2e8f0', position: 'relative', overflow: 'hidden' }}>
+
+      {/* AI 첨삭 로딩 오버레이 */}
+      {isEvaluating && (
+        <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(6px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+          <div style={{ width: '56px', height: '56px', border: '4px solid #e2e8f0', borderTopColor: '#2563eb', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: '20px' }} />
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#0f172a', fontWeight: '700' }}>AI가 답변을 분석하고 있어요</h3>
+          <p style={{ margin: 0, fontSize: '14px', color: '#64748b' }}>고품질 첨삭을 위해 20~30초 정도 소요됩니다...</p>
+        </div>
+      )}
+
+      {/* AI 질문 생성 로딩 오버레이 */}
+      {isGenerating && (
+        <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(6px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+          <div style={{ width: '56px', height: '56px', border: '4px solid #e2e8f0', borderTopColor: '#16a34a', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: '20px' }} />
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#0f172a', fontWeight: '700' }}>맞춤형 면접 질문을 생성하고 있어요</h3>
+          <p style={{ margin: 0, fontSize: '14px', color: '#64748b' }}>정의서를 분석해서 날카로운 질문을 만들고 있습니다...</p>
+        </div>
+      )}
+
+      <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
       
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMobile ? '24px' : '32px' }}>
         <div>
