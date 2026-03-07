@@ -305,12 +305,12 @@ export default function IdentityDocument({ session }: IdentityDocumentProps) {
           </button>
           <button onClick={() => setShowAIPrompt(!showAIPrompt)}
             style={{ padding: '12px 20px', backgroundColor: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: '10px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', ...(isMobile ? { width: '100%', justifyContent: 'center' } : {}) }}>
-            <Wand2 size={18} /> AI 첨삭 (1T)
+            <Wand2 size={18} /> AI 첨삭 
           </button>
           <button onClick={handleHumanEdit}
             disabled={status === 'pending_human' || status === 'generating'}
             style={{ padding: '12px 20px', backgroundColor: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', borderRadius: '10px', fontSize: '14px', fontWeight: '600', cursor: (status === 'pending_human' || status === 'generating') ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', opacity: (status === 'pending_human' || status === 'generating') ? 0.6 : 1, ...(isMobile ? { width: '100%', justifyContent: 'center' } : {}) }}>
-            <UserCheck size={18} /> 컨설턴트 첨삭 (100T)
+            <UserCheck size={18} /> 컨설턴트 첨삭 
           </button>
         </div>
 

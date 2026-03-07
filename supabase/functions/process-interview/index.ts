@@ -136,6 +136,10 @@ serve(async (req) => {
       answerText,
       existingQuestions,
       qnaId,
+      // 탐구 과제용
+      existingTopics,
+      topic,
+      contentText,
     } = await req.json();
 
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
@@ -207,6 +211,86 @@ serve(async (req) => {
             role: "user",
             content:
               `[면접 질문]\n${questionText}\n\n[학생 원문 답변]\n${answerText}`,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 4000,
+      });
+
+      return new Response(
+        JSON.stringify({ result: data.choices[0].message.content }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ── 탐구 과제 주제 생성 ──────────────────────────────────────────────────
+    if (action === "generate_research_topics") {
+      const hasExisting = existingTopics && existingTopics.length > 0;
+      const existingBlock = hasExisting
+        ? `\n\n[이미 생성된 주제 목록 - 아래 주제들과 유사하거나 중복되는 주제는 절대 생성하지 마세요]\n${
+          existingTopics.map((t: string, i: number) => `${i + 1}. ${t}`)
+            .join("\n")
+        }`
+        : "";
+
+      const systemPrompt = await getActivePrompt(
+        supabase,
+        "research_topics",
+        `당신은 대한민국 최고의 입시 컨설턴트입니다. 학생의 '정의서'와 '진로 Path'를 바탕으로, 해당 분야에 대한 깊이 있는 탐구 과제 주제 3개를 생성해 주세요.
+
+각 주제는:
+- 해당 진로 분야의 핵심 인물, 최신 이슈, 학문적 개념, 산업 트렌드 등을 포함
+- 학생이 1000자 이상의 깊이 있는 조사 보고서를 작성할 수 있는 구체적인 주제
+- 면접에서 "이 분야에 대해 어떤 탐구를 했나요?"라는 질문에 답변 소재가 될 수 있는 주제
+
+반드시 다른 말은 빼고 주제 3개를 JSON 배열(Array of strings) 형태로만 출력하세요.
+예: ["주제1", "주제2", "주제3"]`,
+      );
+
+      const data = await callOpenAI(OPENAI_API_KEY, {
+        model: "gpt-4.1-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content:
+              `[진로 Path]: ${pathName}\n\n[학생 정의서]\n${identityContent}${existingBlock}`,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      });
+
+      return new Response(
+        JSON.stringify({ result: data.choices[0].message.content }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ── 탐구 과제 첨삭 ──────────────────────────────────────────────────────
+    if (action === "evaluate_research") {
+      const systemPrompt = await getActivePrompt(
+        supabase,
+        "research_evaluate",
+        `당신은 날카로우면서도 따뜻한 입시 컨설턴트입니다. 학생이 진로 탐구 과제로 작성한 조사 내용을 읽고 아래 형식으로 반드시 출력하세요.
+
+[첨삭된 내용]
+학생의 원문 의도를 살리되, 논리 구조를 개선하고 더 깊이 있는 분석과 구체적 사례를 보완한 업그레이드된 조사 내용을 작성해 주세요. 학술적 용어 활용, 출처 언급 방식, 자기 견해 제시 등을 강화하세요.
+
+[컨설턴트 코멘트]
+- 잘한 점 1가지
+- 보완이 필요한 핵심 포인트 2가지
+- 면접에서 이 탐구 내용을 활용하는 팁 1가지`,
+      );
+
+      const data = await callOpenAI(OPENAI_API_KEY, {
+        model: "gpt-4.1-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content:
+              `[탐구 주제]\n${topic}\n\n[학생의 조사 내용]\n${contentText}`,
           },
         ],
         temperature: 0.7,

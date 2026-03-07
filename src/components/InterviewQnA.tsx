@@ -350,7 +350,7 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
             style={{ padding: '14px 28px', backgroundColor: '#2563eb', color: '#ffffff', border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: (isGenerating || !identityData) ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)', opacity: (isGenerating || !identityData) ? 0.7 : 1 }}
           >
             {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-            {isGenerating ? 'AI가 질문을 생성 중입니다...' : '면접 질문 생성하기 (1T)'}
+            {isGenerating ? 'AI가 질문을 생성 중입니다...' : '면접 질문 생성하기 '}
           </button>
         </div>
       ) : (
@@ -424,10 +424,10 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
 
                     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
                       <button onClick={() => handleRequestFeedback(q.id, 'ai')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px 20px', backgroundColor: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: '8px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s ease', width: isMobile ? '100%' : 'auto' }}>
-                        <Sparkles size={16} /> AI 첨삭 (1T)
+                        <Sparkles size={16} /> AI 첨삭 
                       </button>
                       <button onClick={() => handleRequestFeedback(q.id, 'human')} disabled={q.status === 'submitted'} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px 20px', backgroundColor: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', borderRadius: '8px', fontSize: '14px', fontWeight: '700', cursor: q.status === 'submitted' ? 'not-allowed' : 'pointer', opacity: q.status === 'submitted' ? 0.6 : 1, transition: 'all 0.2s ease', width: isMobile ? '100%' : 'auto' }}>
-                        <UserCheck size={16} /> 컨설턴트 첨삭 (100T)
+                        <UserCheck size={16} /> 컨설턴트 첨삭 
                       </button>
                     </div>
                   </div>
@@ -458,7 +458,7 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
               }}
             >
               {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-              {isGenerating ? '질문 생성 중...' : `질문 3개 더 추가하기 (1T) · 현재 ${questions.length}개`}
+              {isGenerating ? '질문 생성 중...' : `질문 3개 더 추가하기  · 현재 ${questions.length}개`}
             </button>
           </div>
         </div>

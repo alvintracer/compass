@@ -11,17 +11,23 @@ import GradeManager from './GradeManager'
 import MockInterview from './MockInterview'
 import FileVault from './FileVault'
 import Messages from './Messages'
+import Payment from './Payment'
+import GoalsTracker from './GoalsTracker'
+import ResearchTasks from './ResearchTasks'
 import {
   Compass, Home, Mic, FileEdit, BarChart2, MonitorPlay,
-  Bot, User, LogOut, Loader2, FolderOpen, MessageSquare, Menu, X,
+  Bot, User, LogOut, Loader2, FolderOpen, MessageSquare, Menu, X, CreditCard,
+  Target, BookOpen,
 } from 'lucide-react'
 
 interface DashboardProps { session: Session }
 
 // TABS를 모듈 레벨로 분리 — 매 렌더마다 새로 생성되는 것 방지
 const TABS = [
+  { id: 'goals',     name: '과제/목표',     icon: Target        },
   { id: 'overview',  name: '나의 정의서',   icon: Home          },
   { id: 'qna',       name: '면접 Q&A 뱅크', icon: Mic           },
+  { id: 'research',  name: '탐구 과제',     icon: BookOpen      },
   { id: 'mock',      name: '모의면접실',     icon: MonitorPlay   },
   { id: 'records',   name: '생기부 첨삭소',  icon: FileEdit      },
   { id: 'grades',    name: '나의 성적',      icon: BarChart2     },
@@ -98,6 +104,20 @@ function SidebarContent({
       </nav>
 
       <div style={{ marginTop: 'auto', borderTop: '1px solid #e2e8f0', paddingTop: '24px' }}>
+        {/* 토큰 충전 링크 */}
+        <button
+          onClick={() => onTabClick('payment')}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+            width: '100%', padding: compact ? '10px' : '12px', marginBottom: '12px',
+            borderRadius: '10px', border: 'none',
+            background: 'linear-gradient(135deg, #2563eb, #7c3aed)', color: '#ffffff',
+            fontSize: '13px', fontWeight: '700', cursor: 'pointer',
+            transition: 'all 0.2s',
+          }}
+        >
+          <CreditCard size={15} /> 토큰 충전하기
+        </button>
         <div style={{
           marginBottom: '16px', padding: compact ? '12px' : '16px',
           backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0',
@@ -313,13 +333,16 @@ export default function Dashboard({ session }: DashboardProps) {
           <Onboarding session={session} onComplete={() => setIsOnboarded(true)} />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {activeTab === 'goals'    && <GoalsTracker    session={session} />}
             {activeTab === 'overview' && <IdentityDocument session={session} />}
             {activeTab === 'qna'      && <InterviewQnA     session={session} />}
+            {activeTab === 'research' && <ResearchTasks    session={session} />}
             {activeTab === 'mock'     && <MockInterview     session={session} />}
             {activeTab === 'records'  && <RecordFeedback   session={session} />}
             {activeTab === 'grades'   && <GradeManager     session={session} />}
             {activeTab === 'vault'    && <FileVault         session={session} />}
             {activeTab === 'messages' && <Messages          session={session} />}
+            {activeTab === 'payment' && <Payment session={session} onBack={() => handleTabClick('overview')} />}
           </div>
         )}
       </div>

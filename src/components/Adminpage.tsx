@@ -10,7 +10,8 @@ import {
   Compass, Loader2, Check, Inbox, Send, UserCheck, Mic,
   FileEdit, RefreshCw, ImagePlus, Users, ChevronRight,
   ChevronLeft, Pencil, Save, X, Image as ImageIcon,
-  MessageCircle, User, Zap, Plus, Minus,
+  MessageCircle, User, Zap, Plus, Minus, DollarSign,
+  Clock, CheckCircle2,
 } from 'lucide-react';
 
 interface AdminPageProps {
@@ -52,7 +53,7 @@ const formatDate = (d: string) => {
 
 // ── 학생 상세 패널 ─────────────────────────────────────────────────────────
 function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBack: () => void }) {
-  const [tab, setTab]             = useState<'identity' | 'interview' | 'schoolrecord' | 'messages'>('identity');
+  const [tab, setTab]             = useState<'identity' | 'interview' | 'schoolrecord' | 'messages' | 'progress' | 'tasks'>('identity');
   const [isLoading, setIsLoading] = useState(true);
 
   // 토큰
@@ -107,6 +108,19 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
   const [msgLoading, setMsgLoading]   = useState(false);
   const bottomMsgRef                  = React.useRef<HTMLDivElement>(null);
 
+  // 성취도
+  interface WeekGoal { id: string; week_start: string; qna_target: number; qna_done: number; research_target: number; research_done: number; mock_target: number; mock_done: number; }
+  interface CTask { id: string; title: string; description: string | null; due_date: string | null; is_completed: boolean; created_at: string; }
+  const [weeklyGoal, setWeeklyGoal] = useState<WeekGoal | null>(null);
+  const [totalQna, setTotalQna] = useState(0);
+  const [totalResearch, setTotalResearch] = useState(0);
+  const [totalMock, setTotalMock] = useState(0);
+  const [customTasks, setCustomTasks] = useState<CTask[]>([]);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDesc, setNewTaskDesc] = useState('');
+  const [newTaskDue, setNewTaskDue] = useState('');
+  const [taskSaving, setTaskSaving] = useState(false);
+
   useEffect(() => { loadAll(); }, [student.id]);
 
   // 메세지 탭 전환 시 로드
@@ -143,7 +157,63 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
       .order('created_at', { ascending: true });
     setSrImages((imgs as SchoolRecordImg[]) ?? []);
 
+    // 성취도 데이터
+    await loadProgressData();
+
     setIsLoading(false);
+  };
+
+  const loadProgressData = async () => {
+    // Q&A 완성 수 (500자+)
+    const { data: qnaData } = await supabase.from('interview_qnas').select('id, answer_text').eq('user_id', student.id);
+    setTotalQna((qnaData || []).filter(q => (q.answer_text || '').length >= 500).length);
+
+    // 탐구 과제 (1000자+)
+    const { data: resData } = await supabase.from('research_tasks').select('id, content_text').eq('user_id', student.id);
+    setTotalResearch((resData || []).filter(r => (r.content_text || '').length >= 1000).length);
+
+    // 모의면접
+    const { count: mockCnt } = await supabase.from('mock_interview_sessions').select('id', { count: 'exact', head: true }).eq('user_id', student.id);
+    setTotalMock(mockCnt || 0);
+
+    // 이번 주 목표
+    const today = new Date();
+    const day = today.getDay();
+    const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(today);
+    monday.setDate(diff);
+    const weekStart = monday.toISOString().split('T')[0];
+    const { data: wg } = await supabase.from('weekly_goals').select('*').eq('user_id', student.id).eq('week_start', weekStart).single();
+    setWeeklyGoal(wg as WeekGoal | null);
+
+    // 상시 과제
+    const { data: ct } = await supabase.from('custom_tasks').select('*').eq('user_id', student.id).order('created_at', { ascending: false });
+    setCustomTasks((ct as CTask[]) || []);
+  };
+
+  const handleAddTask = async () => {
+    if (!newTaskTitle.trim()) return alert('과제 제목을 입력해주세요.');
+    setTaskSaving(true);
+    const { error } = await supabase.from('custom_tasks').insert({
+      user_id: student.id,
+      title: newTaskTitle.trim(),
+      description: newTaskDesc.trim() || null,
+      due_date: newTaskDue || null,
+      assigned_by: (await supabase.auth.getUser()).data.user?.id,
+    });
+    if (error) alert('과제 저장 실패: ' + error.message);
+    else {
+      setNewTaskTitle(''); setNewTaskDesc(''); setNewTaskDue('');
+      await loadProgressData();
+      alert('✅ 과제가 출제되었습니다!');
+    }
+    setTaskSaving(false);
+  };
+
+  const handleDeleteTask = async (id: string) => {
+    if (!confirm('이 과제를 삭제하시겠습니까?')) return;
+    await supabase.from('custom_tasks').delete().eq('id', id);
+    setCustomTasks(prev => prev.filter(t => t.id !== id));
   };
 
   const saveIdentity = async () => {
@@ -312,10 +382,12 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
       </div>
 
       {/* 탭 */}
-      <div style={{ display: 'flex', backgroundColor: '#ffffff', borderRadius: '14px 14px 0 0', border: '1px solid #e2e8f0', borderBottom: 'none' }}>
+      <div style={{ display: 'flex', backgroundColor: '#ffffff', borderRadius: '14px 14px 0 0', border: '1px solid #e2e8f0', borderBottom: 'none', overflowX: 'auto' }}>
         <button style={TAB(tab === 'identity')}     onClick={() => setTab('identity')}>📋 정의서</button>
-        <button style={TAB(tab === 'interview')}    onClick={() => setTab('interview')}>🎤 면접 Q&A</button>
-        <button style={TAB(tab === 'schoolrecord')} onClick={() => setTab('schoolrecord')}>📚 생활기록부</button>
+        <button style={TAB(tab === 'interview')}    onClick={() => setTab('interview')}>🎤 면접</button>
+        <button style={TAB(tab === 'progress')}     onClick={() => { setTab('progress'); loadProgressData(); }}>📊 성취도</button>
+        <button style={TAB(tab === 'tasks')}         onClick={() => { setTab('tasks'); loadProgressData(); }}>📋 과제</button>
+        <button style={TAB(tab === 'schoolrecord')} onClick={() => setTab('schoolrecord')}>📚 생기부</button>
         <button style={TAB(tab === 'messages')}     onClick={() => setTab('messages')}>💬 메세지</button>
       </div>
 
@@ -568,6 +640,181 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
               </>
             )}
           </>
+        ) : tab === 'progress' ? (
+          /* ── 성취도 탭 ── */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* 전체 진척도 */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+              {[
+                { label: '면접 Q&A', done: totalQna, target: 50, color: '#2563eb', unit: '개' },
+                { label: '탐구 과제', done: totalResearch, target: 20, color: '#7c3aed', unit: '개' },
+                { label: '모의면접', done: totalMock, target: 0, color: '#ea580c', unit: '회' },
+              ].map(g => {
+                const pct = g.target > 0 ? Math.min(g.done / g.target, 1) : 0;
+                return (
+                  <div key={g.label} style={{ padding: '16px', borderRadius: '14px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', marginBottom: '6px' }}>{g.label}</div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                      <span style={{ fontSize: '24px', fontWeight: '800', color: g.color }}>{g.done}</span>
+                      {g.target > 0 && <span style={{ fontSize: '13px', color: '#94a3b8' }}>/ {g.target}{g.unit}</span>}
+                      {g.target === 0 && <span style={{ fontSize: '13px', color: '#94a3b8' }}>{g.unit}</span>}
+                    </div>
+                    {g.target > 0 && (
+                      <div style={{ marginTop: '8px', height: '5px', borderRadius: '3px', backgroundColor: '#e2e8f0' }}>
+                        <div style={{ height: '100%', borderRadius: '3px', backgroundColor: g.color, width: `${pct * 100}%`, transition: 'width 0.4s' }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 이번 주 */}
+            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+              <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: '700', color: '#0f172a' }}>📅 이번 주 할당량</h4>
+              {weeklyGoal ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                  {[
+                    { label: 'Q&A', done: weeklyGoal.qna_done, target: weeklyGoal.qna_target, color: '#2563eb' },
+                    { label: '탐구', done: weeklyGoal.research_done, target: weeklyGoal.research_target, color: '#7c3aed' },
+                    { label: '모면', done: weeklyGoal.mock_done, target: weeklyGoal.mock_target, color: '#ea580c' },
+                  ].map(w => {
+                    const ok = w.done >= w.target;
+                    return (
+                      <div key={w.label} style={{
+                        padding: '14px', borderRadius: '10px', textAlign: 'center',
+                        border: `2px solid ${ok ? '#16a34a' : '#e2e8f0'}`,
+                        backgroundColor: ok ? '#f0fdf4' : '#fafafa',
+                      }}>
+                        <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>{w.label}</div>
+                        <span style={{ fontSize: '20px', fontWeight: '800', color: ok ? '#16a34a' : w.color }}>{w.done}</span>
+                        <span style={{ fontSize: '13px', color: '#94a3b8' }}> / {w.target}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8' }}>이번 주 목표가 아직 설정되지 않았습니다</p>
+              )}
+            </div>
+
+            {/* 상시 과제 현황 */}
+            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+              <h4 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: '700', color: '#0f172a' }}>📋 상시 과제 현황</h4>
+              {customTasks.length === 0 ? (
+                <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8' }}>출제된 과제가 없습니다</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {customTasks.map(t => (
+                    <div key={t.id} style={{
+                      padding: '10px 14px', borderRadius: '8px', fontSize: '13px',
+                      backgroundColor: t.is_completed ? '#f0fdf4' : '#fffbeb',
+                      border: `1px solid ${t.is_completed ? '#bbf7d0' : '#fde68a'}`,
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    }}>
+                      <span style={{ color: t.is_completed ? '#16a34a' : '#92400e', fontWeight: '600', textDecoration: t.is_completed ? 'line-through' : 'none' }}>
+                        {t.title}
+                      </span>
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: t.is_completed ? '#16a34a' : '#d97706' }}>
+                        {t.is_completed ? '✅ 완료' : '⏳ 진행중'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+        ) : tab === 'tasks' ? (
+          /* ── 과제 출제 탭 ── */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* 새 과제 출제 */}
+            <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+              <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: '700', color: '#0f172a' }}>✏️ 새 과제 출제</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <input
+                  value={newTaskTitle}
+                  onChange={e => setNewTaskTitle(e.target.value)}
+                  placeholder="과제 제목 (필수)"
+                  style={{ padding: '12px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none', fontFamily: 'inherit' }}
+                />
+                <textarea
+                  value={newTaskDesc}
+                  onChange={e => setNewTaskDesc(e.target.value)}
+                  placeholder="과제 설명 (선택)"
+                  rows={3}
+                  style={{ padding: '12px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
+                />
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <label style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', whiteSpace: 'nowrap' }}>기한:</label>
+                  <input
+                    type="date"
+                    value={newTaskDue}
+                    onChange={e => setNewTaskDue(e.target.value)}
+                    style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none', fontFamily: 'inherit' }}
+                  />
+                </div>
+                <button onClick={handleAddTask} disabled={taskSaving || !newTaskTitle.trim()}
+                  style={{
+                    padding: '12px', borderRadius: '10px', border: 'none',
+                    backgroundColor: !newTaskTitle.trim() ? '#e2e8f0' : '#0f172a',
+                    color: !newTaskTitle.trim() ? '#94a3b8' : '#ffffff',
+                    fontSize: '14px', fontWeight: '700', cursor: !newTaskTitle.trim() ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  }}>
+                  {taskSaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                  과제 출제하기
+                </button>
+              </div>
+            </div>
+
+            {/* 기존 과제 목록 */}
+            <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+              <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: '700', color: '#0f172a' }}>
+                출제된 과제 ({customTasks.length}개)
+              </h4>
+              {customTasks.length === 0 ? (
+                <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8', textAlign: 'center', padding: '24px' }}>아직 출제한 과제가 없습니다</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {customTasks.map(t => (
+                    <div key={t.id} style={{
+                      padding: '14px 16px', borderRadius: '12px',
+                      border: `1px solid ${t.is_completed ? '#bbf7d0' : '#fde68a'}`,
+                      backgroundColor: t.is_completed ? '#f0fdf4' : '#fffbeb',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a', marginBottom: '2px', textDecoration: t.is_completed ? 'line-through' : 'none' }}>
+                            {t.title}
+                          </div>
+                          {t.description && <div style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.5 }}>{t.description}</div>}
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
+                          <span style={{
+                            fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '6px',
+                            backgroundColor: t.is_completed ? '#dcfce7' : '#fef3c7',
+                            color: t.is_completed ? '#16a34a' : '#d97706',
+                          }}>
+                            {t.is_completed ? '완료' : '미완료'}
+                          </span>
+                          <button onClick={() => handleDeleteTask(t.id)}
+                            style={{ backgroundColor: 'transparent', border: 'none', color: '#dc2626', fontSize: '12px', fontWeight: '600', cursor: 'pointer', padding: '4px' }}>
+                            <X size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
+                        <span>출제: {new Date(t.created_at).toLocaleDateString('ko-KR')}</span>
+                        {t.due_date && <span>기한: {new Date(t.due_date).toLocaleDateString('ko-KR')}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
         ) : null)}
       </div>
     </div>
@@ -591,10 +838,20 @@ export default function AdminPage({ session }: AdminPageProps) {
   const [notifyStatus, setNotifyStatus]         = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
 
   // 학생관리
-  const [mainTab, setMainTab]               = useState<'requests' | 'students' | 'prompts' | 'admission' | 'admissionView'>('requests');
+  const [mainTab, setMainTab]               = useState<'requests' | 'students' | 'prompts' | 'admission' | 'admissionView' | 'payments'>('requests');
   const [students, setStudents]             = useState<StudentProfile[]>([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<StudentProfile | null>(null);
+
+  // 결제 관리
+  interface PaymentOrderAdmin {
+    id: string; user_id: string; items: string;
+    total_amount: number; status: 'pending' | 'confirmed' | 'rejected';
+    created_at: string; userEmail?: string; userName?: string;
+  }
+  const [paymentOrders, setPaymentOrders] = useState<PaymentOrderAdmin[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'pending' | 'confirmed'>('pending');
 
   useEffect(() => {
     supabase.from('profiles').select('role').eq('id', session.user.id).single()
@@ -651,8 +908,57 @@ export default function AdminPage({ session }: AdminPageProps) {
   };
 
   useEffect(() => {
-    if (isAuthorized) { fetchRequests(); fetchStudents(); }
+    if (isAuthorized) { fetchRequests(); fetchStudents(); fetchPayments(); }
   }, [isAuthorized]);
+
+  const fetchPayments = async () => {
+    setPaymentsLoading(true);
+    const { data } = await supabase
+      .from('payment_orders').select('*')
+      .order('created_at', { ascending: false });
+    if (data && data.length > 0) {
+      const userIds = [...new Set(data.map((o: any) => o.user_id))];
+      const { data: profiles } = await supabase.from('profiles').select('id, name, email').in('id', userIds);
+      const nameMap: Record<string, { name: string; email: string }> = {};
+      profiles?.forEach((p: any) => { nameMap[p.id] = { name: p.name || '', email: p.email || '' }; });
+      setPaymentOrders(data.map((o: any) => ({
+        ...o,
+        userName: nameMap[o.user_id]?.name || '',
+        userEmail: nameMap[o.user_id]?.email || o.user_id.substring(0, 8),
+      })));
+    } else {
+      setPaymentOrders([]);
+    }
+    setPaymentsLoading(false);
+  };
+
+  const handleConfirmPayment = async (order: PaymentOrderAdmin) => {
+    if (!confirm(`"${order.userName || order.userEmail}"의 ${order.total_amount.toLocaleString()}원 입금을 확인하시겠습니까?`)) return;
+    // figure out what tokens to add based on order items
+    let addAi = 0, addHuman = 0;
+    const items = order.items;
+    if (items.includes('특별 패키지')) { addAi += 200; addHuman += 30; }
+    if (items.includes('AI 토큰 100개')) { addAi += 100; }
+    if (items.includes('컨설턴트 토큰 10개')) { addHuman += 10; }
+
+    // update order status
+    const { error } = await supabase.from('payment_orders').update({ status: 'confirmed' }).eq('id', order.id);
+    if (error) { alert('업데이트 실패: ' + error.message); return; }
+
+    // add tokens to user profile
+    if (addAi > 0 || addHuman > 0) {
+      const { data: profile } = await supabase.from('profiles').select('ai_tokens, human_tokens').eq('id', order.user_id).single();
+      if (profile) {
+        await supabase.from('profiles').update({
+          ai_tokens: (profile.ai_tokens || 0) + addAi,
+          human_tokens: (profile.human_tokens || 0) + addHuman,
+        }).eq('id', order.user_id);
+      }
+    }
+
+    alert('✅ 입금 확인 완료! 토큰이 지급되었습니다.');
+    fetchPayments();
+  };
 
   const handleSelect = (req: Request) => {
     setSelectedId(req.id);
@@ -775,6 +1081,16 @@ export default function AdminPage({ session }: AdminPageProps) {
               }}>
                 ⚡ 프롬프트
               </button>
+              <button onClick={() => { setMainTab('payments'); fetchPayments(); }} style={{
+                flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700',
+                backgroundColor: mainTab === 'payments' ? '#ffffff' : 'transparent',
+                color: mainTab === 'payments' ? '#0f172a' : '#94a3b8',
+                boxShadow: mainTab === 'payments' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+              }}>
+                💰 결제관리
+              </button>
+            </div>
+            <div style={{ display: 'flex', backgroundColor: '#f1f5f9', borderRadius: '10px', padding: '3px' }}>
               <button onClick={() => setMainTab('admission')} style={{
                 flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '700',
                 backgroundColor: mainTab === 'admission' ? '#ffffff' : 'transparent',
@@ -914,6 +1230,106 @@ export default function AdminPage({ session }: AdminPageProps) {
           <AdmissionViewer />
         ) : mainTab === 'prompts' ? (
           <PromptManager />
+        ) : mainTab === 'payments' ? (
+          /* ── 결제 관리 패널 ── */
+          <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <div>
+                <h2 style={{ margin: '0 0 4px 0', fontSize: '22px', fontWeight: '800', color: '#0f172a' }}>결제 관리</h2>
+                <p style={{ margin: 0, fontSize: '14px', color: '#64748b' }}>학생들의 토큰 구매 요청을 확인하고 입금을 처리하세요</p>
+              </div>
+              <button onClick={fetchPayments} style={{
+                padding: '8px 16px', borderRadius: '10px', border: '1px solid #e2e8f0',
+                backgroundColor: '#ffffff', color: '#64748b', fontSize: '13px', fontWeight: '600',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+              }}>
+                <RefreshCw size={14} /> 새로고침
+              </button>
+            </div>
+
+            {/* 필터 */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+              {(['all', 'pending', 'confirmed'] as const).map(f => {
+                const labels: Record<string, string> = { all: '전체', pending: '입금 대기', confirmed: '확인 완료' };
+                const counts: Record<string, number> = {
+                  all: paymentOrders.length,
+                  pending: paymentOrders.filter(o => o.status === 'pending').length,
+                  confirmed: paymentOrders.filter(o => o.status === 'confirmed').length,
+                };
+                return (
+                  <button key={f} onClick={() => setPaymentFilter(f)} style={{
+                    padding: '8px 16px', borderRadius: '10px', border: 'none', fontSize: '13px', fontWeight: '700', cursor: 'pointer',
+                    backgroundColor: paymentFilter === f ? '#0f172a' : '#f1f5f9',
+                    color: paymentFilter === f ? '#ffffff' : '#64748b',
+                  }}>
+                    {labels[f]} {counts[f] > 0 ? `(${counts[f]})` : ''}
+                  </button>
+                );
+              })}
+            </div>
+
+            {paymentsLoading ? (
+              <div style={{ textAlign: 'center', padding: '48px' }}>
+                <Loader2 size={28} color="#94a3b8" className="animate-spin" style={{ display: 'inline-block' }} />
+              </div>
+            ) : paymentOrders.filter(o => paymentFilter === 'all' ? true : o.status === paymentFilter).length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '48px', backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                <DollarSign size={36} color="#cbd5e1" strokeWidth={1.5} style={{ marginBottom: '10px' }} />
+                <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8' }}>결제 요청이 없습니다</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {paymentOrders
+                  .filter(o => paymentFilter === 'all' ? true : o.status === paymentFilter)
+                  .map(order => {
+                    const isPending = order.status === 'pending';
+                    return (
+                      <div key={order.id} style={{
+                        backgroundColor: '#ffffff', borderRadius: '16px', border: `1px solid ${isPending ? '#fbbf24' : '#e2e8f0'}`,
+                        padding: '20px 24px', transition: 'all 0.2s',
+                        borderLeft: isPending ? '4px solid #f59e0b' : '4px solid #16a34a',
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                              <span style={{ fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>{order.userName || '이름 없음'}</span>
+                              <span style={{ fontSize: '12px', color: '#94a3b8' }}>{order.userEmail}</span>
+                            </div>
+                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#475569' }}>{order.items}</div>
+                          </div>
+                          <span style={{
+                            fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '8px',
+                            display: 'flex', alignItems: 'center', gap: '4px',
+                            backgroundColor: isPending ? '#fffbeb' : '#f0fdf4',
+                            color: isPending ? '#d97706' : '#16a34a',
+                          }}>
+                            {isPending ? <Clock size={12} /> : <CheckCircle2 size={12} />}
+                            {isPending ? '입금 확인 대기' : '입금 확인 완료'}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <span style={{ fontSize: '18px', fontWeight: '800', color: '#2563eb' }}>{order.total_amount.toLocaleString()}원</span>
+                            <span style={{ fontSize: '12px', color: '#94a3b8' }}>{new Date(order.created_at).toLocaleString('ko-KR')}</span>
+                          </div>
+                          {isPending && (
+                            <button onClick={() => handleConfirmPayment(order)} style={{
+                              padding: '10px 20px', borderRadius: '10px', border: 'none',
+                              backgroundColor: '#16a34a', color: '#ffffff',
+                              fontSize: '13px', fontWeight: '700', cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', gap: '6px',
+                              transition: 'all 0.2s',
+                            }}>
+                              <Check size={15} /> 입금 확인
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
         ) : mainTab === 'students' ? (
           !selectedStudent ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8' }}>

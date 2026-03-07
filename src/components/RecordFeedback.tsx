@@ -366,7 +366,7 @@ export default function RecordFeedback({ session }: RecordFeedbackProps) {
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '14px 24px', backgroundColor: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: (isSubmitting || isOcrLoading) ? 'not-allowed' : 'pointer', opacity: (isSubmitting || isOcrLoading) ? 0.6 : 1, width: isMobile ? '100%' : 'auto' }}
             >
               {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-              AI 첨삭 (1T)
+              AI 첨삭 
             </button>
             <button
               onClick={() => handleSubmit('human')}
@@ -374,7 +374,7 @@ export default function RecordFeedback({ session }: RecordFeedbackProps) {
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '14px 24px', backgroundColor: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: (isSubmitting || isOcrLoading) ? 'not-allowed' : 'pointer', opacity: (isSubmitting || isOcrLoading) ? 0.6 : 1, width: isMobile ? '100%' : 'auto' }}
             >
               {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <UserCheck size={18} />}
-              컨설턴트 심층 첨삭 (100T)
+              컨설턴트 심층 첨삭 
             </button>
           </div>
         </div>

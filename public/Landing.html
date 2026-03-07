@@ -279,6 +279,87 @@
     .mock-msg.recv  { background: #f1f5f9; color: var(--navy); border-radius: 10px 10px 10px 2px; }
     .mock-msgs { display: flex; flex-direction: column; gap: 6px; }
 
+    /* ── 컨설턴트 소개 ── */
+    .consultant {
+      background: linear-gradient(160deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+      color: var(--white); position: relative; overflow: hidden;
+    }
+    .consultant::before {
+      content: ''; position: absolute; inset: 0;
+      background:
+        radial-gradient(ellipse 50% 50% at 20% 20%, rgba(37,99,235,0.08) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 40% at 80% 80%, rgba(245,158,11,0.06) 0%, transparent 60%);
+    }
+    .consultant .section-label { color: var(--gold); }
+    .consultant .section-label::before { background: var(--gold); }
+    .consultant .section-title { color: var(--white); }
+    .consultant .section-desc { color: #94a3b8; }
+
+    .consultant-headline {
+      max-width: 680px; font-size: clamp(17px, 2.5vw, 20px);
+      color: #cbd5e1; line-height: 1.8; margin-top: 20px; margin-bottom: 56px;
+    }
+    .consultant-headline strong { color: var(--white); font-weight: 700; }
+    .consultant-headline em {
+      font-style: normal; color: var(--gold); font-weight: 700;
+    }
+
+    .uni-grid {
+      display: flex; flex-wrap: wrap; gap: 10px;
+      margin-bottom: 56px;
+    }
+    .uni-badge {
+      padding: 8px 18px; border-radius: 100px;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+      font-size: 13px; font-weight: 600; color: #94a3b8;
+      transition: all 0.3s; white-space: nowrap;
+    }
+    .uni-badge:hover {
+      background: rgba(37,99,235,0.15); border-color: rgba(37,99,235,0.3);
+      color: #93c5fd; transform: translateY(-2px);
+    }
+    .uni-badge.sky {
+      background: rgba(37,99,235,0.12); border-color: rgba(37,99,235,0.25);
+      color: #93c5fd;
+    }
+
+    .consultant-cards {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    }
+    .consultant-card {
+      padding: 36px 32px; border-radius: var(--radius);
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      transition: all 0.3s; position: relative; overflow: hidden;
+    }
+    .consultant-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--gold), #fbbf24);
+      transform: scaleX(0); transform-origin: left; transition: transform 0.3s;
+    }
+    .consultant-card:hover { background: rgba(255,255,255,0.06); transform: translateY(-4px); }
+    .consultant-card:hover::before { transform: scaleX(1); }
+    .consultant-card .card-emoji {
+      font-size: 32px; margin-bottom: 16px;
+    }
+    .consultant-card h3 {
+      font-size: 18px; font-weight: 800; margin-bottom: 12px; color: var(--white);
+    }
+    .consultant-card p {
+      font-size: 14px; color: #94a3b8; line-height: 1.8;
+    }
+    .consultant-card .highlight-text {
+      margin-top: 16px; padding: 14px 18px; border-radius: 12px;
+      background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15);
+      font-size: 14px; color: #fbbf24; font-weight: 600; line-height: 1.6;
+    }
+
+    @media (max-width: 768px) {
+      .consultant-cards { grid-template-columns: 1fr; }
+      .uni-grid { gap: 8px; }
+      .uni-badge { font-size: 12px; padding: 6px 14px; }
+    }
+
     /* ── 튜토리얼 스텝 ── */
     .tutorial { background: var(--navy); color: var(--white); }
     .tutorial .section-label { color: var(--gold); }
@@ -642,6 +723,63 @@
           </div>
         </div>
 
+      </div>
+    </div>
+  </section>
+
+  <!-- 컨설턴트 소개 -->
+  <section class="consultant" id="consultant">
+    <div class="container" style="position:relative; z-index:1;">
+      <div class="reveal">
+        <div class="section-label">OUR CONSULTANTS</div>
+        <h2 class="section-title">10년차 SKY 출신 컨설턴트의<br />노하우를 담았습니다</h2>
+        <p class="consultant-headline">
+          <strong>인서울 상위권 대학 합격</strong>의 실전 노하우부터 지방거점국립대까지 —<br />
+          <em>대한민국 최고의 입시 전문가</em>의 컨설팅 경험을 AI가 학습했습니다.<br />
+          직접 비대면 컨설팅도 함께 제공해요.
+        </p>
+      </div>
+
+      <div class="uni-grid reveal">
+        <span class="uni-badge sky">고려대 경영학과</span>
+        <span class="uni-badge sky">연세대 경영학과</span>
+        <span class="uni-badge">한양대 경영학과</span>
+        <span class="uni-badge sky">고려대 컴퓨터학과</span>
+        <span class="uni-badge sky">고려대 수학과</span>
+        <span class="uni-badge sky">고려대 생명과학부</span>
+        <span class="uni-badge sky">고려대 환경생태공학부</span>
+        <span class="uni-badge">중앙대 경제학부</span>
+        <span class="uni-badge">숙명여대 경영학부</span>
+        <span class="uni-badge">국민대 경제학과</span>
+        <span class="uni-badge">동덕여대 미디어디자인학부</span>
+        <span class="uni-badge" style="color:#64748b; border-style:dashed;">+ 더 많은 합격 사례</span>
+      </div>
+
+      <div class="consultant-cards reveal">
+        <div class="consultant-card">
+          <div class="card-emoji">🎯</div>
+          <h3>중위권 학생에 특화된 전략</h3>
+          <p>
+            상위 1%만을 위한 컨설팅이 아닙니다.<br />
+            중위권에서 시작해 상위권 대학에 합격한 수많은 사례를 통해,<br />
+            현실적이면서도 최대한의 성과를 끌어내는 전략을 설계합니다.
+          </p>
+          <div class="highlight-text">
+            "스펙이 아닌 학생의 '이야기'를 만들어주는 컨설팅"
+          </div>
+        </div>
+        <div class="consultant-card">
+          <div class="card-emoji">🧭</div>
+          <h3>입시 전에, 인생의 방향부터</h3>
+          <p>
+            단순히 좋은 대학에 넣는 것이 목표가 아닙니다.<br />
+            인생의 방향성을 먼저 수립하고, 입시를 그 길목 위에 놓습니다.<br />
+            인생의 모든 결정과 도전을 자기주도적으로 할 수 있는 학생으로 성장시켜요.
+          </p>
+          <div class="highlight-text">
+            "입시가 끝난 뒤에도, 스스로 길을 찾을 수 있는 사람으로"
+          </div>
+        </div>
       </div>
     </div>
   </section>

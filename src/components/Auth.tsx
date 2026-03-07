@@ -36,7 +36,7 @@ export default function Auth() {
 
       {/* 서비스 소개 배너 */}
       <a
-        href="/landing.html"
+        href="/Landing.html"
         style={{
           display: 'flex', alignItems: 'center', gap: '8px',
           marginBottom: '24px', padding: '10px 20px',
@@ -142,7 +142,7 @@ export default function Auth() {
       {/* 하단 서비스 소개 링크 (모바일용 추가) */}
       <p style={{ marginTop: '20px', fontSize: '13px', color: '#94a3b8', textAlign: 'center' }}>
         Compass가 무엇인지 궁금하다면?{' '}
-        <a href="/landing.html" style={{ color: '#2563eb', fontWeight: '600', textDecoration: 'none' }}>
+        <a href="/Landing.html" style={{ color: '#2563eb', fontWeight: '600', textDecoration: 'none' }}>
           서비스 소개 →
         </a>
       </p>
