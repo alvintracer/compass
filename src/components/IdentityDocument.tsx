@@ -218,7 +218,7 @@ export default function IdentityDocument({ session }: IdentityDocumentProps) {
 
   // ── 컨설턴트 첨삭 요청 ───────────────────────────────────────────────────
   const handleHumanEdit = async () => {
-    if (!confirm('컨설턴트 첨삭을 요청하시겠어요? (100 휴먼 토큰 소모)')) return;
+    if (!confirm('컨설턴트 첨삭을 요청하시겠어요? (100 컨설턴트 토큰 소모)')) return;
     if (documentId) {
       await supabase.from('identity_documents').update({ status: 'pending_human' }).eq('id', documentId);
     }

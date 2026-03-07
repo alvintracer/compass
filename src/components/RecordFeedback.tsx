@@ -143,14 +143,14 @@ export default function RecordFeedback({ session }: RecordFeedbackProps) {
       return;
     }
     if (advisorType === 'human') {
-      if (!window.confirm('전문 컨설턴트에게 심층 첨삭을 요청하시겠어요? (100 휴먼 토큰 소모)')) return;
+      if (!window.confirm('전문 컨설턴트에게 심층 첨삭을 요청하시겠어요? (100 컨설턴트 토큰 소모)')) return;
     }
 
     setIsSubmitting(true);
     try {
       const rpcName = advisorType === 'ai' ? 'decrement_ai_token' : 'decrement_human_token';
       const { error: tokenError } = await supabase.rpc(rpcName, { target_user_id: session.user.id });
-      if (tokenError) throw new Error(advisorType === 'ai' ? 'AI 토큰이 부족합니다.' : '휴먼 토큰이 부족합니다.');
+      if (tokenError) throw new Error(advisorType === 'ai' ? 'AI 토큰이 부족합니다.' : '컨설턴트 토큰이 부족합니다.');
 
       let imageUrl: string | null = null;
       if (selectedImage) imageUrl = await uploadImage(selectedImage);

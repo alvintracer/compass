@@ -255,12 +255,12 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
     setIsEvaluating(false);
   }
 } else {
-      // 휴먼 컨설턴트 (한태우) - 100 휴먼 토큰 소모
-      const confirm = window.confirm('컨설턴트 첨삭을 요청하시겠어요? (100 휴먼 토큰 소모)');
+      // 휴먼 컨설턴트 (한태우) - 100 컨설턴트 토큰 소모
+      const confirm = window.confirm('컨설턴트 첨삭을 요청하시겠어요? (100 컨설턴트 토큰 소모)');
       if (confirm) {
         try {
           const { error: tokenError } = await supabase.rpc('decrement_human_token', { target_user_id: session.user.id });
-          if (tokenError) throw new Error('휴먼 토큰이 부족합니다.');
+          if (tokenError) throw new Error('컨설턴트 토큰이 부족합니다.');
 
           await supabase.from('interview_qnas').update({ status: 'submitted', answer_text: q.answer_text }).eq('id', qId);
           setQuestions(questions.map(item => item.id === qId ? { ...item, status: 'submitted' } : item));

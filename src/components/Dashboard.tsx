@@ -130,7 +130,7 @@ function SidebarContent({
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px', color: '#475569' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <User size={16} /><span style={{ fontWeight: '600' }}>휴먼 토큰</span>
+              <User size={16} /><span style={{ fontWeight: '600' }}>컨설턴트 토큰</span>
             </div>
             <span style={{ fontWeight: '800', color: '#ea580c' }}>{humanTokens}개</span>
           </div>

@@ -344,10 +344,10 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
 
           <div style={{ width: '1px', backgroundColor: '#e2e8f0', alignSelf: 'stretch', display: 'block' }} />
 
-          {/* 휴먼 토큰 */}
+          {/* 컨설턴트 토큰 */}
           <div style={{ flex: 1, minWidth: '160px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '12px', fontWeight: '700', color: '#ea580c' }}>👤 휴먼 토큰</span>
+              <span style={{ fontSize: '12px', fontWeight: '700', color: '#ea580c' }}>👤 컨설턴트 토큰</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <button onClick={() => adjustToken('human', -1)} disabled={tokenSaving || humanTokens <= 0}
                   style={{ width: '24px', height: '24px', borderRadius: '6px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', cursor: humanTokens <= 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: humanTokens <= 0 ? 0.4 : 1 }}>

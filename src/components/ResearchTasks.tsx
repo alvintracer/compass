@@ -199,7 +199,7 @@ export default function ResearchTasks({ session }: ResearchTasksProps) {
       if (confirm) {
         try {
           const { error: tokenError } = await supabase.rpc('decrement_human_token', { target_user_id: session.user.id });
-          if (tokenError) throw new Error('휴먼 토큰이 부족합니다.');
+          if (tokenError) throw new Error('컨설턴트 토큰이 부족합니다.');
 
           await supabase.from('research_tasks').update({
             status: 'submitted',
