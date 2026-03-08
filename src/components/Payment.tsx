@@ -356,7 +356,7 @@ export default function Payment({ session, onBack }: PaymentProps) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                   <span style={{ fontSize: '17px', fontWeight: '800', color: '#047857' }}>대면 상담 (1회)</span>
                 </div>
-                <div style={{ fontSize: '13px', color: '#065f46', marginBottom: '2px' }}>70분 심층 컨설팅 · 강남역 인근 오프라인</div>
+                <div style={{ fontSize: '13px', color: '#065f46', marginBottom: '2px' }}>70분 심층 컨설팅 · 당산역 인근 오프라인</div>
                 <div style={{ fontSize: '12px', color: '#10b981', marginTop: '6px' }}>150,000원</div>
               </div>
               <div style={{ textAlign: isMobile ? 'left' : 'right', width: isMobile ? '100%' : 'auto' }}>
