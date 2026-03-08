@@ -11,7 +11,7 @@ import {
   FileEdit, RefreshCw, ImagePlus, Users, ChevronRight,
   ChevronLeft, Pencil, Save, X, Image as ImageIcon,
   MessageCircle, User, Zap, Plus, Minus, DollarSign,
-  Clock, CheckCircle2,
+  Clock, CheckCircle2, Bell,
 } from 'lucide-react';
 
 interface AdminPageProps {
@@ -61,6 +61,18 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
   const [humanTokens, setHumanTokens] = useState<number>(student.human_tokens ?? 0);
   const [tokenSaving, setTokenSaving] = useState(false);
   const [tokenInput, setTokenInput]   = useState({ ai: '', human: '' });
+
+  const [alertSending, setAlertSending] = useState(false);
+  const sendAlert = async () => {
+    if (!window.confirm('학생에게 앱 접속 요청 알림 메일을 전송할까요?')) return;
+    setAlertSending(true);
+    const { error } = await supabase.functions.invoke('send-notification', {
+      body: { action: 'app_alert', user_id: student.id }
+    });
+    setAlertSending(false);
+    if (error) alert('알림 발송 실패: ' + error.message);
+    else alert('✅ 학생에게 확인 요청 알림 메일을 발송했습니다.');
+  };
 
   const adjustToken = async (type: 'ai' | 'human', delta: number) => {
     const current = type === 'ai' ? aiTokens : humanTokens;
@@ -293,21 +305,13 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
   const sendMessage = async () => {
     if (!msgInput.trim()) return;
     setMsgSending(true);
-    const { error: insertError } = await supabase.from('messages').insert({
+    await supabase.from('messages').insert({
       user_id:       student.id,
       sender:        'consultant',
       receiver_role: msgRole,
       content:       msgInput.trim(),
       is_read:       false,
     });
-    
-    // 이메일 알림 전송 (에러 발생해도 메시지 저장/전송 자체는 계속 진행)
-    if (!insertError) {
-      await supabase.functions.invoke('send-notification', {
-        body: { action: 'new_message', user_id: student.id, message: msgInput.trim() },
-      });
-    }
-
     setMsgInput('');
     await loadMessages(msgRole);
     setMsgSending(false);
@@ -324,14 +328,24 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
     <div style={{ maxWidth: '800px', margin: '0 auto' }}>
 
       {/* 상단 헤더 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-        <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#ffffff', color: '#475569', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
-          <ChevronLeft size={15} /> 목록으로
-        </button>
-        <div>
-          <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#0f172a' }}>{student.name || '이름 없음'}</h2>
-          <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>{student.email}</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#ffffff', color: '#475569', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+            <ChevronLeft size={15} /> 목록으로
+          </button>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#0f172a' }}>{student.name || '이름 없음'}</h2>
+            <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>{student.email}</p>
+          </div>
         </div>
+        <button
+          onClick={sendAlert} disabled={alertSending}
+          title="학생 이메일로 접속 요청 알림 발송"
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '10px', border: '1px solid #fed7aa', backgroundColor: '#fff7ed', color: '#ea580c', fontSize: '13px', fontWeight: '700', cursor: alertSending ? 'not-allowed' : 'pointer', transition: 'all 0.2s', opacity: alertSending ? 0.7 : 1 }}
+        >
+          {alertSending ? <Loader2 size={15} className="animate-spin" /> : <Bell size={15} />}
+          앱 확인 요청 (알림 전송)
+        </button>
       </div>
 
       {/* 토큰 관리 카드 */}
@@ -840,7 +854,7 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
               <textarea
                 value={msgInput}
                 onChange={e => setMsgInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); sendMessage(); } }}
                 placeholder={`${msgRole === 'student' ? '학생' : '부모님'}에게 메세지 전송 (Enter로 전송)`}
                 rows={2}
                 style={{ flex: 1, padding: '11px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none', resize: 'none', fontFamily: 'inherit', lineHeight: 1.5 }}

@@ -1,6 +1,7 @@
 // supabase/functions/send-notification/index.ts
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import nodemailer from "npm:nodemailer";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,32 +10,35 @@ const corsHeaders = {
 };
 
 const sendEmail = async (to: string, subject: string, html: string) => {
-  const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
-  if (!RESEND_API_KEY) throw new Error("RESEND_API_KEY가 설정되지 않았습니다.");
+  const GMAIL_USER = Deno.env.get("GMAIL_USER") ||
+    "compass.edu.admin@gmail.com";
+  const GMAIL_APP_PASSWORD = Deno.env.get("GMAIL_APP_PASSWORD");
 
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${RESEND_API_KEY}`,
-      "Content-Type": "application/json",
+  if (!GMAIL_APP_PASSWORD) {
+    throw new Error(
+      "GMAIL_APP_PASSWORD가 설정되지 않았습니다. 구글 앱 비밀번호를 설정해주세요.",
+    );
+  }
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: GMAIL_USER,
+      pass: GMAIL_APP_PASSWORD,
     },
-    body: JSON.stringify({
-      from: "Compass <noreply@compass-edu.netlify.app>", // 🌟 도메인 설정 후 변경
-      to: [to],
-      subject,
-      html,
-    }),
   });
 
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(`Resend 에러: ${JSON.stringify(err)}`);
-  }
+  await transporter.sendMail({
+    from: `"Compass" <${GMAIL_USER}>`,
+    to,
+    subject,
+    html,
+  });
 };
 
 // 이메일 템플릿
 const makeEmailHtml = (
-  type: "record" | "interview" | "message",
+  type: "record" | "interview" | "alert",
   previewText: string,
 ) => `
 <!DOCTYPE html>
@@ -69,32 +73,34 @@ const makeEmailHtml = (
     ? "📝 생기부 첨삭이 완료됐어요!"
     : type === "interview"
     ? "🎙️ 면접 Q&A 첨삭이 완료됐어요!"
-    : "💬 컴파스 컨설턴트의 새 메세지가 도착했어요!"
+    : "� 컴파스 앱 확인 요청이 도착했어요!"
 }
               </p>
               <p style="margin:0 0 28px 0;font-size:15px;color:#64748b;line-height:1.6;">
                 ${
-  type === "message"
-    ? "한태우 컨설턴트가 메세지를 보냈어요. 지금 바로 확인해보세요."
+  type === "alert"
+    ? "한태우 컨설턴트님이 컴파스 앱 접속을 요청하셨습니다. 앱에서 상세 내용을 확인해보세요!"
     : "한태우 컨설턴트가 첨삭을 마쳤어요. 지금 바로 확인해보세요."
 }
               </p>
 
               <!-- 미리보기 -->
+              ${type !== "alert" ? `
               <div style="background:#f8fafc;border-radius:12px;padding:20px;border:1px solid #e2e8f0;margin-bottom:28px;">
                 <p style="margin:0 0 8px 0;font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;">
                   ${
   type === "record"
     ? "요청 내용"
-    : type === "interview"
-    ? "면접 질문"
-    : "메세지 내용"
+    : "면접 질문"
 }
                 </p>
                 <p style="margin:0;font-size:14px;color:#334155;line-height:1.6;">
                   ${previewText}
                 </p>
               </div>
+              ` : `
+              <div style="margin-bottom:28px;"></div>
+              `}
 
               <!-- CTA 버튼 -->
               <table cellpadding="0" cellspacing="0" width="100%">
@@ -207,11 +213,11 @@ serve(async (req) => {
       );
     }
 
-    // ── 메세지 알림 ─────────────────────────────────────────
-    if (action === "new_message") {
-      const { user_id, message } = await req.json();
+    // ── 앱 확인 요청 알림 ─────────────────────────────────────────
+    if (action === "app_alert") {
+      const { user_id } = await req.json();
 
-      if (!user_id || !message) throw new Error("필수 정보가 누락되었습니다.");
+      if (!user_id) throw new Error("필수 정보가 누락되었습니다.");
 
       // 유저 이메일 조회 (profiles 테이블)
       const { data: profile } = await supabase
@@ -221,13 +227,10 @@ serve(async (req) => {
         .single();
       if (!profile?.email) throw new Error("유저 이메일을 찾을 수 없습니다.");
 
-      const preview = message.substring(0, 120) +
-        (message.length > 120 ? "..." : "");
-
       await sendEmail(
         profile.email,
-        "[Compass] 컨설턴트의 새 메세지가 도착했어요!",
-        makeEmailHtml("message", preview),
+        "[Compass] 컨설턴트님의 앱 확인 요청이 도착했습니다.",
+        makeEmailHtml("alert", ""),
       );
 
       return new Response(
