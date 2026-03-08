@@ -53,16 +53,16 @@ BEGIN
   SET status = 'expired'
   WHERE status = 'active' AND end_date <= now();
 
-  -- 3. 30일 이내 재결제하지 않은 회원: 동결된 토큰 완전 소멸 처리
+  -- 3. 90일 이내 재결제하지 않은 회원: 동결된 토큰 완전 소멸 처리
   UPDATE profiles
   SET frozen_ai_tokens = 0,
       frozen_human_tokens = 0
   WHERE (COALESCE(frozen_ai_tokens, 0) > 0 OR COALESCE(frozen_human_tokens, 0) > 0)
     AND NOT EXISTS (
-      -- 최근 30일 이내의 만료건이거나 이미 활성 상태인 회원권이 있으면 면제
+      -- 최근 90일 이내의 만료건이거나 이미 활성 상태인 회원권이 있으면 면제
       SELECT 1 FROM memberships m 
       WHERE m.user_id = profiles.id 
-        AND m.end_date > now() - interval '30 days'
+        AND m.end_date > now() - interval '90 days'
     );
 END;
 $$;

@@ -577,7 +577,7 @@ export default function Dashboard({ session }: DashboardProps) {
                 </div>
                 <div style={{ fontSize: '12px', color: '#0284c7', marginTop: '4px' }}>
                   {frozenAiTokens > 0 || frozenHumanTokens > 0 
-                   ? '잠들어 있는 토큰을 깨워주세요! 30일 이내에 회원권을 갱신하면 기존 토큰(AI: '+frozenAiTokens+'개, 컨설턴트: '+frozenHumanTokens+'개)과 신규 토큰을 모두 사용할 수 있습니다.'
+                   ? '잠들어 있는 토큰을 깨워주세요! 90일 이내에 회원권을 갱신하면 기존 토큰(AI: '+frozenAiTokens+'개, 컨설턴트: '+frozenHumanTokens+'개)과 신규 토큰을 모두 사용할 수 있습니다.'
                    : '회원권을 구매하면 매월 서비스 토큰이 지급됩니다. 다른 기능은 정상 이용 가능합니다.'}
                 </div>
               </div>

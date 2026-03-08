@@ -287,7 +287,7 @@ export default function Payment({ session, onBack }: PaymentProps) {
                   <div style={{ fontSize: '13px', fontWeight: '800', color: '#1e40af', marginBottom: '2px' }}>토큰 동결 및 100% 복구 정책</div>
                   <div style={{ fontSize: '12px', color: '#1e3a8a', lineHeight: 1.5 }}>
                     회원권이 만료되면 남은 토큰은 즉시 <strong style={{ color: '#172554' }}>동결(사용 중지)</strong> 처리됩니다.<br/>
-                    단, 만료일 기준 <strong style={{ color: '#172554' }}>30일 이내에 재결제 시 동결된 기존 토큰이 모두 복구되어 새 토큰과 합산</strong>됩니다!
+                    단, 만료일 기준 <strong style={{ color: '#172554' }}>90일 이내에 재결제 시 동결된 기존 토큰이 모두 복구되어 새 토큰과 합산</strong>됩니다!
                   </div>
                 </div>
               </div>
