@@ -143,7 +143,7 @@ export default function RecordFeedback({ session }: RecordFeedbackProps) {
       return;
     }
     if (advisorType === 'human') {
-      if (!window.confirm('전문 컨설턴트에게 심층 첨삭을 요청하시겠어요? (100 컨설턴트 토큰 소모)')) return;
+      if (!window.confirm('전문 컨설턴트에게 심층 첨삭을 요청하시겠어요? (1 컨설턴트 토큰 사용)')) return;
     }
 
     setIsSubmitting(true);

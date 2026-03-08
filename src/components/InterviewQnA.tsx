@@ -255,8 +255,8 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
     setIsEvaluating(false);
   }
 } else {
-      // 휴먼 컨설턴트 (한태우) - 100 컨설턴트 토큰 소모
-      const confirm = window.confirm('컨설턴트 첨삭을 요청하시겠어요? (100 컨설턴트 토큰 소모)');
+      // 휴먼 컨설턴트 (한태우) - 1 컨설턴트 토큰 사용
+      const confirm = window.confirm('컨설턴트 첨삭을 요청하시겠어요? (1 컨설턴트 토큰 사용)');
       if (confirm) {
         try {
           const { error: tokenError } = await supabase.rpc('decrement_human_token', { target_user_id: session.user.id });

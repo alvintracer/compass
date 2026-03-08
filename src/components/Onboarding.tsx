@@ -1,16 +1,20 @@
 // src/components/Onboarding.tsx
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import type { Session } from '@supabase/supabase-js'
 import { useBreakpoint } from '../hooks/useBreakpoint'
-import { User, Target, Search, CheckCircle2, Plus, X } from 'lucide-react'
+import { User, Target, Search, CheckCircle2, Plus, X, ArrowLeft, RefreshCw } from 'lucide-react'
 
 interface OnboardingProps {
   session: Session
   onComplete: () => void
+  mode?: 'initial' | 'regenerate'
+  onCancel?: () => void
 }
 
-export default function Onboarding({ session, onComplete }: OnboardingProps) {
+export default function Onboarding({ session, onComplete, mode = 'initial', onCancel }: OnboardingProps) {
+  const isRegenerate = mode === 'regenerate'
+
   const [name, setName] = useState('')
   const [birthYear, setBirthYear] = useState('')
   const [birthMonth, setBirthMonth] = useState('')
@@ -24,7 +28,47 @@ export default function Onboarding({ session, onComplete }: OnboardingProps) {
 
   const [targets, setTargets] = useState([{ university: '', major: '' }, { university: '', major: '' }])
   const [loading, setLoading] = useState(false)
+  const [prefilled, setPrefilled] = useState(false)
   const { isMobile } = useBreakpoint()
+
+  // 재생성 모드: 기존 데이터 프리필
+  useEffect(() => {
+    if (!isRegenerate || prefilled) return
+    const prefill = async () => {
+      const { data: profile } = await supabase
+        .from('profiles').select('name, school, target_year')
+        .eq('id', session.user.id).single()
+      if (profile) {
+        setName(profile.name || '')
+        setSchool(profile.school || '')
+        if (profile.target_year) setBirthYear(String(profile.target_year))
+      }
+      const { data: ob } = await supabase
+        .from('onboarding_data').select('dreams_and_hobbies, target_majors')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false }).limit(1).single()
+      if (ob) {
+        if (ob.target_majors && ob.target_majors.length > 0) {
+          const parsed = ob.target_majors.map((t: string) => {
+            const parts = t.split(' ')
+            return { university: parts[0] || '', major: parts.slice(1).join(' ') || '' }
+          })
+          setTargets(parsed.length >= 2 ? parsed : [...parsed, { university: '', major: '' }])
+        }
+        if (ob.dreams_and_hobbies) {
+          const answers = ob.dreams_and_hobbies.match(/답변:\s*(.*?)(?=\n\d\.|$)/gs)
+          if (answers && answers.length >= 4) {
+            setQ1(answers[0].replace(/^답변:\s*/, '').trim())
+            setQ2(answers[1].replace(/^답변:\s*/, '').trim())
+            setQ3(answers[2].replace(/^답변:\s*/, '').trim())
+            setQ4(answers[3].replace(/^답변:\s*/, '').trim())
+          }
+        }
+      }
+      setPrefilled(true)
+    }
+    prefill()
+  }, [isRegenerate, prefilled, session.user.id])
 
   const firstName = name.length > 1 ? name.substring(1) : name
   const displayName = firstName.trim() || '학생'
@@ -81,7 +125,20 @@ export default function Onboarding({ session, onComplete }: OnboardingProps) {
 
     const formattedMajors = targets.map(t => `${t.university} ${t.major}`.trim()).filter(t => t !== '')
 
-const { error: onboardingError } = await supabase
+    // 재생성 모드: AI 토큰 차감 후 기존 정의서 삭제
+    if (isRegenerate) {
+      const { error: tokenError } = await supabase.rpc('decrement_ai_token', {
+        target_user_id: session.user.id,
+      })
+      if (tokenError) {
+        alert('AI 토큰이 부족하거나 차감 중 문제가 발생했습니다.')
+        setLoading(false)
+        return
+      }
+      await supabase.from('identity_documents').delete().eq('user_id', session.user.id)
+    }
+
+    const { error: onboardingError } = await supabase
       .from('onboarding_data')
       .insert([
         {
@@ -92,7 +149,7 @@ const { error: onboardingError } = await supabase
         }
       ])
 
-// 4. identity_documents 테이블에 초기 초안 인서트 (상태를 generating으로 변경!)
+    // identity_documents 테이블에 초기 초안 인서트 (상태를 generating으로 변경!)
     if (!onboardingError) {
       await supabase
         .from('identity_documents')
@@ -109,7 +166,7 @@ const { error: onboardingError } = await supabase
 
     if (onboardingError) alert('데이터 저장 중 문제가 발생했습니다: ' + onboardingError.message)
     else {
-      alert('온보딩이 완료되었습니다.')
+      alert(isRegenerate ? '정의서가 새로 생성됩니다!' : '온보딩이 완료되었습니다.')
       onComplete()
     }
   }
@@ -127,12 +184,29 @@ const { error: onboardingError } = await supabase
       boxShadow: '0 4px 24px rgba(0, 0, 0, 0.04)', width: '100%', maxWidth: '880px', margin: '0'
     }}>
       <div style={{ marginBottom: isMobile ? '28px' : '48px', borderBottom: '1px solid #e2e8f0', paddingBottom: isMobile ? '20px' : '32px' }}>
-        <h2 style={{ margin: '0 0 16px 0', fontSize: isMobile ? '22px' : '28px', color: '#0f172a', fontWeight: '800', letterSpacing: '-0.5px' }}>
-          Compass Initialization
+        {isRegenerate && onCancel && (
+          <button onClick={onCancel} style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '8px 14px', borderRadius: '10px', border: '1px solid #e2e8f0',
+            backgroundColor: '#ffffff', color: '#64748b', fontSize: '13px', fontWeight: '600',
+            cursor: 'pointer', marginBottom: '16px', transition: 'all 0.15s',
+          }}>
+            <ArrowLeft size={16} /> 돌아가기
+          </button>
+        )}
+        <h2 style={{ margin: '0 0 16px 0', fontSize: isMobile ? '22px' : '28px', color: '#0f172a', fontWeight: '800', letterSpacing: '-0.5px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {isRegenerate ? (
+            <><RefreshCw size={isMobile ? 22 : 28} color="#2563eb" /> 정의서 새로 생성하기</>
+          ) : (
+            'Compass Initialization'
+          )}
         </h2>
         <p style={{ margin: 0, color: '#64748b', fontSize: isMobile ? '14px' : '16px', lineHeight: '1.6' }}>
-          나침반의 방향을 맞추기 위해 학생의 본질을 파악하는 과정입니다.<br/>
-          가장 솔직하고 편안한 언어로 답변을 작성해 주세요.
+          {isRegenerate ? (
+            <>기존 데이터를 바탕으로 프로필과 답변을 수정하고,<br/>정의서를 처음부터 새로 생성합니다. (AI 토큰 1개 차감)</>
+          ) : (
+            <>나침반의 방향을 맞추기 위해 학생의 본질을 파악하는 과정입니다.<br/>가장 솔직하고 편안한 언어로 답변을 작성해 주세요.</>
+          )}
         </p>
       </div>
 
@@ -244,8 +318,8 @@ const { error: onboardingError } = await supabase
           )}
         </section>
 
-        <button type="submit" disabled={loading} style={{ marginTop: isMobile ? '16px' : '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', padding: isMobile ? '16px' : '20px', width: '100%', backgroundColor: '#0f172a', color: 'white', border: 'none', borderRadius: '14px', fontSize: isMobile ? '15px' : '16px', fontWeight: '700', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.8 : 1, transition: 'all 0.2s ease', letterSpacing: '0.5px' }}>
-          {loading ? '데이터 동기화 중...' : <><CheckCircle2 size={20} /> 정의서 생성 시작하기</>}
+        <button type="submit" disabled={loading} style={{ marginTop: isMobile ? '16px' : '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', padding: isMobile ? '16px' : '20px', width: '100%', backgroundColor: isRegenerate ? '#2563eb' : '#0f172a', color: 'white', border: 'none', borderRadius: '14px', fontSize: isMobile ? '15px' : '16px', fontWeight: '700', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.8 : 1, transition: 'all 0.2s ease', letterSpacing: '0.5px' }}>
+          {loading ? '데이터 동기화 중...' : isRegenerate ? <><RefreshCw size={20} /> 정의서 새로 생성하기</> : <><CheckCircle2 size={20} /> 정의서 생성 시작하기</>}
         </button>
       </form>
     </div>

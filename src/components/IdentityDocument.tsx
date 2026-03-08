@@ -5,13 +5,14 @@ import { supabase } from '../supabaseClient';
 import ReactMarkdown from 'react-markdown';
 import {
   Edit3, Wand2, UserCheck, Loader2, CheckCircle2, Send,
-  Camera, Plus, Trash2, Pencil, FolderOpen, Upload, BookOpen
+  Camera, Plus, Trash2, Pencil, FolderOpen, Upload, BookOpen, RefreshCw, GraduationCap
 } from 'lucide-react';
 import { FilePickerModal, type UserFile } from './FileVault';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 
 interface IdentityDocumentProps {
   session: Session;
+  onRegenerate?: () => void;
 }
 
 interface SchoolRecordImage {
@@ -22,7 +23,7 @@ interface SchoolRecordImage {
   created_at: string;
 }
 
-export default function IdentityDocument({ session }: IdentityDocumentProps) {
+export default function IdentityDocument({ session, onRegenerate }: IdentityDocumentProps) {
   const { isMobile } = useBreakpoint();
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [content, setContent] = useState<string>('');
@@ -39,6 +40,12 @@ export default function IdentityDocument({ session }: IdentityDocumentProps) {
   const [srUploading, setSrUploading]   = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [vaultFiles, setVaultFiles]     = useState<UserFile[]>([]);
+
+  // 목표 대학/학과
+  const [targetGoals, setTargetGoals]   = useState<{ university: string; major: string }[]>([]);
+
+  // 새로 생성하기 확인
+  const [showRegenConfirm, setShowRegenConfirm] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -62,6 +69,23 @@ export default function IdentityDocument({ session }: IdentityDocumentProps) {
           setContent(docData.content);
           setStatus(docData.status as any);
         }
+      }
+
+      // 목표 대학/학과 불러오기
+      const { data: obData } = await supabase
+        .from('onboarding_data')
+        .select('target_majors')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (obData?.target_majors) {
+        const parsed = obData.target_majors.map((t: string) => {
+          const parts = t.split(' ');
+          return { university: parts[0] || '', major: parts.slice(1).join(' ') || '' };
+        });
+        setTargetGoals(parsed);
       }
     };
     fetchAndCheck();
@@ -218,7 +242,7 @@ export default function IdentityDocument({ session }: IdentityDocumentProps) {
 
   // ── 컨설턴트 첨삭 요청 ───────────────────────────────────────────────────
   const handleHumanEdit = async () => {
-    if (!confirm('컨설턴트 첨삭을 요청하시겠어요? (100 컨설턴트 토큰 소모)')) return;
+    if (!confirm('컨설턴트 첨삭을 요청하시겠어요? (1 컨설턴트 토큰 사용)')) return;
     if (documentId) {
       await supabase.from('identity_documents').update({ status: 'pending_human' }).eq('id', documentId);
     }
@@ -226,8 +250,62 @@ export default function IdentityDocument({ session }: IdentityDocumentProps) {
     alert('✅ 한태우 컨설턴트에게 첨삭 요청이 완료되었습니다!');
   };
 
+  // ── 새로 생성하기 ──────────────────────────────────────────────────────────
+  const handleRegenerate = () => {
+    setShowRegenConfirm(false);
+    onRegenerate?.();
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+
+      {/* ── 나의 목표 카드 ── */}
+      {targetGoals.length > 0 && (
+        <div style={{
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #2563eb 100%)',
+          padding: isMobile ? '24px 20px' : '32px 40px',
+          borderRadius: '20px',
+          position: 'relative',
+          overflow: 'hidden',
+        }}>
+          {/* 배경 데코 */}
+          <div style={{ position: 'absolute', top: '-30px', right: '-30px', width: '120px', height: '120px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)' }} />
+          <div style={{ position: 'absolute', bottom: '-20px', left: '-20px', width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(255,255,255,0.03)' }} />
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', position: 'relative' }}>
+            <GraduationCap size={isMobile ? 20 : 24} color="#60a5fa" />
+            <h3 style={{ margin: 0, fontSize: isMobile ? '16px' : '18px', fontWeight: '800', color: '#ffffff', letterSpacing: '-0.3px' }}>🎯 나의 목표</h3>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : `repeat(${Math.min(targetGoals.length, 3)}, 1fr)`,
+            gap: '12px',
+            position: 'relative',
+          }}>
+            {targetGoals.map((goal, idx) => (
+              <div key={idx} style={{
+                padding: isMobile ? '14px 16px' : '16px 20px',
+                backgroundColor: 'rgba(255,255,255,0.08)',
+                borderRadius: '14px',
+                border: '1px solid rgba(255,255,255,0.12)',
+                backdropFilter: 'blur(8px)',
+                transition: 'all 0.2s',
+              }}>
+                <div style={{ fontSize: '11px', color: '#93c5fd', fontWeight: '700', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  {String(idx + 1).padStart(2, '0')}지망
+                </div>
+                <div style={{ fontSize: isMobile ? '15px' : '16px', fontWeight: '800', color: '#ffffff', marginBottom: '4px' }}>
+                  {goal.university}
+                </div>
+                <div style={{ fontSize: isMobile ? '13px' : '14px', color: '#94a3b8', fontWeight: '500' }}>
+                  {goal.major}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── 나의 정의서 카드 ── */}
       <div style={{ backgroundColor: '#ffffff', padding: isMobile ? '20px' : '40px', borderRadius: '20px', border: '1px solid #e2e8f0', position: 'relative', overflow: 'hidden' }}>
@@ -312,7 +390,43 @@ export default function IdentityDocument({ session }: IdentityDocumentProps) {
             style={{ padding: '12px 20px', backgroundColor: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', borderRadius: '10px', fontSize: '14px', fontWeight: '600', cursor: (status === 'pending_human' || status === 'generating') ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', opacity: (status === 'pending_human' || status === 'generating') ? 0.6 : 1, ...(isMobile ? { width: '100%', justifyContent: 'center' } : {}) }}>
             <UserCheck size={18} /> 컨설턴트 첨삭 
           </button>
+          <button onClick={() => setShowRegenConfirm(true)}
+            disabled={isGenerating || isAILoading}
+            style={{ padding: '12px 20px', backgroundColor: '#f0f4ff', color: '#4338ca', border: '1px solid #c7d2fe', borderRadius: '10px', fontSize: '14px', fontWeight: '600', cursor: (isGenerating || isAILoading) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', opacity: (isGenerating || isAILoading) ? 0.6 : 1, ...(isMobile ? { width: '100%', justifyContent: 'center' } : {}) }}>
+            <RefreshCw size={18} /> 새로 생성하기
+          </button>
         </div>
+
+        {/* 새로 생성하기 확인 패널 */}
+        {showRegenConfirm && (
+          <div style={{ marginTop: '16px', padding: '20px', backgroundColor: '#faf5ff', borderRadius: '14px', border: '1px solid #e9d5ff', animation: 'fadeIn 0.2s ease' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '16px' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <RefreshCw size={20} color="#7c3aed" />
+              </div>
+              <div>
+                <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', fontWeight: '700', color: '#4c1d95' }}>정의서를 새로 생성할까요?</h4>
+                <p style={{ margin: 0, fontSize: '13px', color: '#6b7280', lineHeight: '1.6' }}>
+                  온보딩 질문에 다시 답변하고, 정의서를 처음부터 새로 생성합니다.<br/>
+                  기존 파일과 생기부 등 나머지 데이터는 그대로 유지됩니다.<br/>
+                  <strong style={{ color: '#7c3aed' }}>AI 토큰 1개가 차감</strong>됩니다.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowRegenConfirm(false)}
+                style={{ padding: '10px 20px', backgroundColor: '#ffffff', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: '10px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                취소
+              </button>
+              <button
+                onClick={handleRegenerate}
+                style={{ padding: '10px 20px', backgroundColor: '#7c3aed', color: '#ffffff', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <RefreshCw size={14} /> 네, 새로 생성할게요
+              </button>
+            </div>
+          </div>
+        )}
 
         <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
       </div>

@@ -163,6 +163,7 @@ export default function Dashboard({ session }: DashboardProps) {
   const [aiTokens, setAiTokens]             = useState(0)
   const [humanTokens, setHumanTokens]       = useState(0)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isRegenerating, setIsRegenerating] = useState(false)
 
   const { isMobile, isTablet } = useBreakpoint()
 
@@ -331,10 +332,20 @@ export default function Dashboard({ session }: DashboardProps) {
 
         {!isOnboarded ? (
           <Onboarding session={session} onComplete={() => setIsOnboarded(true)} />
+        ) : isRegenerating ? (
+          <Onboarding
+            session={session}
+            mode="regenerate"
+            onComplete={() => {
+              setIsRegenerating(false)
+              setActiveTab('overview')
+            }}
+            onCancel={() => setIsRegenerating(false)}
+          />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {activeTab === 'goals'    && <GoalsTracker    session={session} />}
-            {activeTab === 'overview' && <IdentityDocument session={session} />}
+            {activeTab === 'overview' && <IdentityDocument session={session} onRegenerate={() => setIsRegenerating(true)} />}
             {activeTab === 'qna'      && <InterviewQnA     session={session} />}
             {activeTab === 'research' && <ResearchTasks    session={session} />}
             {activeTab === 'mock'     && <MockInterview     session={session} />}
