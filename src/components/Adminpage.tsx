@@ -1,5 +1,5 @@
 // src/components/AdminPage.tsx
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 import ReactMarkdown from 'react-markdown';
@@ -1118,6 +1118,7 @@ export default function AdminPage({ session }: AdminPageProps) {
   const [paymentOrders, setPaymentOrders] = useState<PaymentOrderAdmin[]>([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'pending' | 'confirmed'>('pending');
+  const [confirmModalOrder, setConfirmModalOrder] = useState<PaymentOrderAdmin | null>(null);
 
   useEffect(() => {
     supabase.from('profiles').select('role').eq('id', session.user.id).single()
@@ -1198,8 +1199,7 @@ export default function AdminPage({ session }: AdminPageProps) {
     setPaymentsLoading(false);
   };
 
-  const handleConfirmPayment = async (order: PaymentOrderAdmin) => {
-    if (!confirm(`"${order.userName || order.userEmail}"의 ${order.total_amount.toLocaleString()}원 입금을 확인하시겠습니까?`)) return;
+  const executeConfirmPayment = async (order: PaymentOrderAdmin) => {
     
     const items = order.items;
     
@@ -1256,16 +1256,30 @@ export default function AdminPage({ session }: AdminPageProps) {
       if (existingMembership && new Date(existingMembership.end_date) <= now) {
         await supabase.from('memberships').update({ status: 'expired' }).eq('id', existingMembership.id);
       }
+      // 동결 토큰 조회 및 복구
+      const { data: profileObj, error: fetchProfileError } = await supabase.from('profiles').select('frozen_ai_tokens, frozen_human_tokens').eq('id', order.user_id).single();
+      if (fetchProfileError) {
+        console.error('동결 토큰 조회 에러 (무시하고 0으로 진행):', fetchProfileError.message);
+      }
+      const restoredAi = profileObj?.frozen_ai_tokens || 0;
+      const restoredHuman = profileObj?.frozen_human_tokens || 0;
 
-      // 토큰 리셋 (매월 AI 100 + 컨설턴트 30)
-      await supabase.from('profiles').update({
-        ai_tokens: 100,
-        human_tokens: 30,
+      // 토큰 리셋 (매월 AI 100 + 컨설턴트 30 + 동결된 토큰 복구)
+      const { error: profileUpdateError } = await supabase.from('profiles').update({
+        ai_tokens: 100 + restoredAi,
+        human_tokens: 30 + restoredHuman,
+        frozen_ai_tokens: 0,
+        frozen_human_tokens: 0,
         membership_end_date: endDate.toISOString(),
         membership_plan: planType,
       }).eq('id', order.user_id);
 
-      alert(`✅ 회원권 활성화 완료!\n기간: ${months}개월 (${endDate.toLocaleDateString('ko-KR')}까지)\nAI 토큰 100개 + 컨설턴트 토큰 30개 충전됨`);
+      if (profileUpdateError) {
+        alert('회원권은 등록되었으나 토큰/프로필 업데이트 중 예기치 못한 에러가 발생했습니다.\n' + profileUpdateError.message);
+        return;
+      }
+
+      alert(`✅ 회원권 활성화 완료!\n기간: ${months}개월 (${endDate.toLocaleDateString('ko-KR')}까지)\nAI 토큰 ${100 + restoredAi}개 + 컨설턴트 토큰 ${30 + restoredHuman}개 충전됨 (동결 토큰 복구 포함)`);
     } else {
       // 레거시 토큰 개별 구매 (하위호환)
       let addAi = 0, addHuman = 0;
@@ -1643,7 +1657,7 @@ export default function AdminPage({ session }: AdminPageProps) {
                             <span style={{ fontSize: '12px', color: '#94a3b8' }}>{new Date(order.created_at).toLocaleString('ko-KR')}</span>
                           </div>
                           {isPending && (
-                            <button onClick={() => handleConfirmPayment(order)} style={{
+                            <button onClick={() => setConfirmModalOrder(order)} style={{
                               padding: '10px 20px', borderRadius: '10px', border: 'none',
                               backgroundColor: '#16a34a', color: '#ffffff',
                               fontSize: '13px', fontWeight: '700', cursor: 'pointer',
@@ -1657,6 +1671,32 @@ export default function AdminPage({ session }: AdminPageProps) {
                       </div>
                     );
                   })}
+              </div>
+            )}
+
+            {/* 입금 확인 커스텀 모달 */}
+            {confirmModalOrder && (
+              <div 
+                style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' }} 
+                onClick={() => setConfirmModalOrder(null)}
+              >
+                <div 
+                  style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '16px', maxWidth: '400px', width: '90%', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} 
+                  onClick={e => e.stopPropagation()}
+                >
+                  <h3 style={{ margin: '0 0 12px 0', fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>입금 확인</h3>
+                  <p style={{ margin: '0 0 24px 0', fontSize: '15px', color: '#475569', lineHeight: 1.5 }}>
+                    "{confirmModalOrder.userName || confirmModalOrder.userEmail}"님의 <br/>
+                    <strong style={{color:'#2563eb', fontSize: '16px'}}>{confirmModalOrder.total_amount.toLocaleString()}원</strong> 입금을 확인하시겠습니까?<br/>
+                    <span style={{fontSize: '13px', color: '#94a3b8', display: 'block', marginTop: '6px'}}>(확인 시 시스템에 바로 적용됩니다)</span>
+                  </p>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button onClick={() => setConfirmModalOrder(null)} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#ffffff', color: '#475569', fontSize: '14px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>취소</button>
+                    <button onClick={() => { executeConfirmPayment(confirmModalOrder); setConfirmModalOrder(null); }} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', backgroundColor: '#16a34a', color: '#ffffff', fontSize: '14px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', transition: 'all 0.2s' }}>
+                      <Check size={16} /> 확인 완료
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

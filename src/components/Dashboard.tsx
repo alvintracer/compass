@@ -58,6 +58,8 @@ interface SidebarProps {
   activeTab: string
   aiTokens: number
   humanTokens: number
+  frozenAiTokens: number
+  frozenHumanTokens: number
   membership: MembershipInfo
   userId: string
   onTabClick: (id: string) => void
@@ -67,7 +69,7 @@ interface SidebarProps {
 
 function SidebarContent({
   isMobile, isTablet, isOnboarded, activeTab,
-  aiTokens, humanTokens, membership, userId, onTabClick, onClose, onLogout,
+  aiTokens, humanTokens, frozenAiTokens, frozenHumanTokens, membership, userId, onTabClick, onClose, onLogout,
 }: SidebarProps) {
   const compact = isTablet && !isMobile
 
@@ -225,24 +227,45 @@ function SidebarContent({
         <div style={{
           marginBottom: '16px', padding: compact ? '12px' : '16px',
           backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0',
-          opacity: membership.isFrozen ? 0.5 : 1,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', fontSize: '13px', color: '#475569' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Bot size={16} /><span style={{ fontWeight: '600' }}>AI 토큰</span>
-            </div>
-            <span style={{ fontWeight: '800', color: '#2563eb' }}>
-              {membership.isFrozen ? '🔒' : `${aiTokens}개`}
-            </span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px', color: '#475569' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <User size={16} /><span style={{ fontWeight: '600' }}>컨설턴트 토큰</span>
-            </div>
-            <span style={{ fontWeight: '800', color: '#ea580c' }}>
-              {membership.isFrozen ? '🔒' : `${humanTokens}개`}
-            </span>
-          </div>
+          {membership.isFrozen && (frozenAiTokens > 0 || frozenHumanTokens > 0) ? (
+            <>
+              <div style={{ marginBottom: '10px', fontSize: '12px', fontWeight: '800', color: '#0369a1', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                🧊 동결된 토큰 <span style={{ fontWeight: '500', color: '#0284c7', fontSize: '11px' }}>(재결제 시 연장)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px', color: '#475569', opacity: 0.7 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Bot size={16} /><span style={{ fontWeight: '600' }}>AI 토큰</span>
+                </div>
+                <span style={{ fontWeight: '800', color: '#0369a1' }}>{frozenAiTokens}개</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px', color: '#475569', opacity: 0.7 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <User size={16} /><span style={{ fontWeight: '600' }}>컨설턴트 토큰</span>
+                </div>
+                <span style={{ fontWeight: '800', color: '#0369a1' }}>{frozenHumanTokens}개</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', fontSize: '13px', color: '#475569' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Bot size={16} /><span style={{ fontWeight: '600' }}>AI 토큰</span>
+                </div>
+                <span style={{ fontWeight: '800', color: membership.isFrozen ? '#94a3b8' : '#2563eb' }}>
+                  {membership.isFrozen ? '0개' : `${aiTokens}개`}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px', color: '#475569' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <User size={16} /><span style={{ fontWeight: '600' }}>컨설턴트 토큰</span>
+                </div>
+                <span style={{ fontWeight: '800', color: membership.isFrozen ? '#94a3b8' : '#ea580c' }}>
+                  {membership.isFrozen ? '0개' : `${humanTokens}개`}
+                </span>
+              </div>
+            </>
+          )}
         </div>
         <button
           onClick={onLogout}
@@ -271,6 +294,8 @@ export default function Dashboard({ session }: DashboardProps) {
   const [activeTab, setActiveTab]           = useState('overview')
   const [aiTokens, setAiTokens]             = useState(0)
   const [humanTokens, setHumanTokens]       = useState(0)
+  const [frozenAiTokens, setFrozenAiTokens] = useState(0)
+  const [frozenHumanTokens, setFrozenHumanTokens] = useState(0)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isRegenerating, setIsRegenerating] = useState(false)
   const [membership, setMembership] = useState<MembershipInfo>({
@@ -330,20 +355,27 @@ export default function Dashboard({ session }: DashboardProps) {
   // 토큰 명시적 조회 — Realtime이 안 올 때 fallback으로 사용
   const refreshTokens = useCallback(async () => {
     const { data } = await supabase
-      .from('profiles').select('ai_tokens, human_tokens')
+      .from('profiles').select('ai_tokens, human_tokens, frozen_ai_tokens, frozen_human_tokens')
       .eq('id', session.user.id).single()
     if (data) {
       setAiTokens(data.ai_tokens)
       setHumanTokens(data.human_tokens)
+      setFrozenAiTokens(data.frozen_ai_tokens || 0)
+      setFrozenHumanTokens(data.frozen_human_tokens || 0)
     }
   }, [session.user.id])
 
   useEffect(() => {
     const fetchUserData = async () => {
       const { data: profile } = await supabase
-        .from('profiles').select('ai_tokens, human_tokens')
+        .from('profiles').select('ai_tokens, human_tokens, frozen_ai_tokens, frozen_human_tokens')
         .eq('id', session.user.id).single()
-      if (profile) { setAiTokens(profile.ai_tokens); setHumanTokens(profile.human_tokens) }
+      if (profile) {
+        setAiTokens(profile.ai_tokens)
+        setHumanTokens(profile.human_tokens)
+        setFrozenAiTokens(profile.frozen_ai_tokens || 0)
+        setFrozenHumanTokens(profile.frozen_human_tokens || 0)
+      }
 
       const { data: onboarding } = await supabase
         .from('onboarding_data').select('id').eq('user_id', session.user.id).limit(1)
@@ -364,6 +396,8 @@ export default function Dashboard({ session }: DashboardProps) {
       }, (payload) => {
         setAiTokens(payload.new.ai_tokens)
         setHumanTokens(payload.new.human_tokens)
+        setFrozenAiTokens(payload.new.frozen_ai_tokens || 0)
+        setFrozenHumanTokens(payload.new.frozen_human_tokens || 0)
       }).subscribe()
 
     // Realtime 미동작 대비 30초 폴링 fallback
@@ -401,7 +435,7 @@ export default function Dashboard({ session }: DashboardProps) {
 
   const sidebarProps: SidebarProps = {
     isMobile, isTablet, isOnboarded, activeTab,
-    aiTokens, humanTokens, membership, userId: session.user.id,
+    aiTokens, humanTokens, frozenAiTokens, frozenHumanTokens, membership, userId: session.user.id,
     onTabClick: handleTabClick,
     onLogout: handleLogout,
   }
@@ -424,8 +458,12 @@ export default function Dashboard({ session }: DashboardProps) {
             <span style={{ fontSize: '17px', fontWeight: '800', color: '#0f172a', letterSpacing: '-0.5px' }}>Compass</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {membership.isFrozen ? (
-              <span style={{ fontSize: '11px', fontWeight: '700', color: '#dc2626', backgroundColor: '#fef2f2', padding: '3px 8px', borderRadius: '6px' }}>🔒 동결</span>
+            {membership.isFrozen && (frozenAiTokens > 0 || frozenHumanTokens > 0) ? (
+              <span style={{ fontSize: '11px', fontWeight: '800', color: '#0369a1', backgroundColor: '#e0f2fe', padding: '4px 8px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                🧊 동결 ({frozenAiTokens + frozenHumanTokens})
+              </span>
+            ) : membership.isFrozen ? (
+              <span style={{ fontSize: '11px', fontWeight: '700', color: '#dc2626', backgroundColor: '#fef2f2', padding: '3px 8px', borderRadius: '6px' }}>🔒 만료됨</span>
             ) : (
               <>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -526,25 +564,27 @@ export default function Dashboard({ session }: DashboardProps) {
         {membership.isFrozen && !membership.isActive && (
           <div style={{
             marginBottom: '20px', padding: '16px 20px', borderRadius: '14px',
-            backgroundColor: '#f8fafc', border: '1px solid #e2e8f0',
+            backgroundColor: '#f0f9ff', border: '1px solid #bae6fd',
             display: 'flex', alignItems: isMobile ? 'flex-start' : 'center',
             flexDirection: isMobile ? 'column' : 'row',
             gap: '12px', justifyContent: 'space-between',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Crown size={20} color="#94a3b8" />
+              <div style={{ fontSize: '24px' }}>🧊</div>
               <div>
-                <div style={{ fontSize: '14px', fontWeight: '800', color: '#475569' }}>
-                  🔒 회원권이 만료되어 토큰 사용이 동결되었습니다
+                <div style={{ fontSize: '14px', fontWeight: '800', color: '#0369a1' }}>
+                  회원권 만료로 {frozenAiTokens > 0 || frozenHumanTokens > 0 ? '남은 토큰이 동결되었습니다' : '서비스 이용이 제한됩니다'}
                 </div>
-                <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
-                  회원권을 재구매하면 토큰이 다시 충전됩니다. 다른 기능은 정상 이용 가능합니다.
+                <div style={{ fontSize: '12px', color: '#0284c7', marginTop: '4px' }}>
+                  {frozenAiTokens > 0 || frozenHumanTokens > 0 
+                   ? '잠들어 있는 토큰을 깨워주세요! 30일 이내에 회원권을 갱신하면 기존 토큰(AI: '+frozenAiTokens+'개, 컨설턴트: '+frozenHumanTokens+'개)과 신규 토큰을 모두 사용할 수 있습니다.'
+                   : '회원권을 구매하면 매월 서비스 토큰이 지급됩니다. 다른 기능은 정상 이용 가능합니다.'}
                 </div>
               </div>
             </div>
             <button onClick={() => handleTabClick('payment')} style={{
               padding: '8px 20px', borderRadius: '10px', border: 'none',
-              background: 'linear-gradient(135deg, #2563eb, #7c3aed)', color: '#ffffff',
+              background: 'linear-gradient(135deg, #0ea5e9, #0284c7)', color: '#ffffff',
               fontSize: '13px', fontWeight: '700', cursor: 'pointer',
               whiteSpace: 'nowrap', flexShrink: 0,
             }}>

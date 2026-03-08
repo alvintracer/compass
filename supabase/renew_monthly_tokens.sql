@@ -23,9 +23,10 @@ BEGIN
       AND m.token_reset_date + interval '30 days' <= now()
       AND m.plan_type IN ('3month', '6month')
   LOOP
-    -- 토큰 리셋 (AI 100, 컨설턴트 30)
+    -- 토큰 이월 및 추가 (기존 토큰 유지 + AI 100, 컨설턴트 30 추가)
     UPDATE profiles
-    SET ai_tokens = 100, human_tokens = 30
+    SET ai_tokens = COALESCE(ai_tokens, 0) + 100,
+        human_tokens = COALESCE(human_tokens, 0) + 30
     WHERE id = rec.user_id;
     
     -- 리셋 날짜 갱신
@@ -36,10 +37,33 @@ BEGIN
     RAISE NOTICE 'Renewed tokens for user %', rec.user_id;
   END LOOP;
   
-  -- 만료된 회원권 상태 업데이트
+  -- 1. 만료된 회원권 대상: 남은 토큰을 동결 토큰으로 이전 및 0 초기화
+  UPDATE profiles
+  SET frozen_ai_tokens = COALESCE(frozen_ai_tokens, 0) + COALESCE(ai_tokens, 0),
+      frozen_human_tokens = COALESCE(frozen_human_tokens, 0) + COALESCE(human_tokens, 0),
+      ai_tokens = 0,
+      human_tokens = 0
+  WHERE id IN (
+    SELECT user_id FROM memberships
+    WHERE status = 'active' AND end_date <= now()
+  );
+
+  -- 2. 만료된 회원권 상태 업데이트
   UPDATE memberships
   SET status = 'expired'
   WHERE status = 'active' AND end_date <= now();
+
+  -- 3. 30일 이내 재결제하지 않은 회원: 동결된 토큰 완전 소멸 처리
+  UPDATE profiles
+  SET frozen_ai_tokens = 0,
+      frozen_human_tokens = 0
+  WHERE (COALESCE(frozen_ai_tokens, 0) > 0 OR COALESCE(frozen_human_tokens, 0) > 0)
+    AND NOT EXISTS (
+      -- 최근 30일 이내의 만료건이거나 이미 활성 상태인 회원권이 있으면 면제
+      SELECT 1 FROM memberships m 
+      WHERE m.user_id = profiles.id 
+        AND m.end_date > now() - interval '30 days'
+    );
 END;
 $$;
 

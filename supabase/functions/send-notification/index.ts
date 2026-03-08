@@ -36,6 +36,22 @@ const sendEmail = async (to: string, subject: string, html: string) => {
   });
 };
 
+// 텔레그램 알림
+const sendTelegram = async (message: string) => {
+  const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
+  const chatId = Deno.env.get("TELEGRAM_CHAT_ID");
+  if (!token || !chatId) return;
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: message,
+      parse_mode: "HTML",
+    }),
+  });
+};
+
 // 이메일 템플릿
 const makeEmailHtml = (
   type: "record" | "interview" | "alert",
@@ -139,7 +155,8 @@ serve(async (req) => {
   }
 
   try {
-    const { action, recordId, qnaId } = await req.json();
+    const payload = await req.json();
+    const { action, recordId, qnaId, user_id } = payload;
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get(
@@ -215,8 +232,6 @@ serve(async (req) => {
 
     // ── 앱 확인 요청 알림 ─────────────────────────────────────────
     if (action === "app_alert") {
-      const { user_id } = await req.json();
-
       if (!user_id) throw new Error("필수 정보가 누락되었습니다.");
 
       // 유저 이메일 조회 (profiles 테이블)
@@ -232,6 +247,19 @@ serve(async (req) => {
         "[Compass] 컨설턴트님의 앱 확인 요청이 도착했습니다.",
         makeEmailHtml("alert", ""),
       );
+
+      return new Response(
+        JSON.stringify({ result: "sent" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ── 어드민 텔레그램 푸시 ─────────────────────────────────────────
+    if (action === "admin_telegram") {
+      const { message } = payload;
+      if (!message) throw new Error("메세지 내용이 없습니다.");
+
+      await sendTelegram(message);
 
       return new Response(
         JSON.stringify({ result: "sent" }),

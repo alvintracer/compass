@@ -57,6 +57,9 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
   // Path 삭제 확인
   const [deletingPathId, setDeletingPathId] = useState<string | null>(null);
 
+  // 컨설턴트 첨삭 커스텀 컨펌 모달 상태
+  const [pendingHumanFeedback, setPendingHumanFeedback] = useState<{ id: string, text: string } | null>(null);
+
   // 1. 초기 데이터 로드
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -337,24 +340,32 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
         setIsEvaluating(false);
       }
     } else {
-      const confirm = window.confirm('컨설턴트 첨삭을 요청하시겠어요? (1 컨설턴트 토큰 사용)');
-      if (confirm) {
-        try {
-          const { error: tokenError } = await supabase.rpc('decrement_human_token', { target_user_id: session.user.id });
-          if (tokenError) throw new Error('컨설턴트 토큰이 부족합니다.');
+      setPendingHumanFeedback({ id: qId, text: q.question });
+    }
+  };
 
-          await supabase.from('interview_qnas').update({ status: 'submitted', answer_text: q.answer_text }).eq('id', qId);
-          setQuestions(questions.map(item => item.id === qId ? { ...item, status: 'submitted' } : item));
+  const executeHumanFeedback = async () => {
+    if (!pendingHumanFeedback) return;
+    const qId = pendingHumanFeedback.id;
+    const q = questions.find(item => item.id === qId);
+    if (!q) { setPendingHumanFeedback(null); return; }
 
-          await supabase.functions.invoke('process-interview', {
-            body: { action: 'human_request', qnaId: qId }
-          });
+    try {
+      const { error: tokenError } = await supabase.rpc('decrement_human_token', { target_user_id: session.user.id });
+      if (tokenError) throw new Error('컨설턴트 토큰이 부족합니다.');
 
-          alert('✅ 한태우 컨설턴트에게 첨삭 요청이 완료되었습니다!');
-        } catch (err: any) {
-          alert(err.message);
-        }
-      }
+      await supabase.from('interview_qnas').update({ status: 'submitted', answer_text: q.answer_text }).eq('id', qId);
+      setQuestions(questions.map(item => item.id === qId ? { ...item, status: 'submitted' } : item));
+
+      await supabase.functions.invoke('process-interview', {
+        body: { action: 'human_request', qnaId: qId }
+      });
+
+      alert('✅ 한태우 컨설턴트에게 첨삭 요청이 완료되었습니다!');
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setPendingHumanFeedback(null);
     }
   };
 
@@ -657,6 +668,32 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
             >
               <Plus size={16} /> 추가
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 컨설턴트 첨삭 요청 모달 */}
+      {pendingHumanFeedback && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' }} onClick={() => setPendingHumanFeedback(null)}>
+          <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '16px', maxWidth: '400px', width: '90%', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <UserCheck size={20} color="#ea580c" />
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>컨설턴트 첨삭 요청</h3>
+            </div>
+            <p style={{ margin: '0 0 16px 0', fontSize: '14px', color: '#475569', lineHeight: 1.6 }}>
+              질문: <strong>"{pendingHumanFeedback.text}"</strong><br/><br/>
+              이 답변에 대해 전문 컨설턴트의 1:1 맞춤 피드백을 요청하시겠습니까?
+            </p>
+            <div style={{ backgroundColor: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '12px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Sparkles size={16} color="#d97706" />
+              <span style={{ fontSize: '13px', fontWeight: '700', color: '#b45309' }}>1 컨설턴트 토큰이 사용됩니다.</span>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setPendingHumanFeedback(null)} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#ffffff', color: '#475569', fontSize: '14px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>취소</button>
+              <button onClick={executeHumanFeedback} style={{ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', backgroundColor: '#ea580c', color: '#ffffff', fontSize: '14px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', transition: 'all 0.2s' }}>
+                <UserCheck size={16} /> 요청하기
+              </button>
+            </div>
           </div>
         </div>
       )}

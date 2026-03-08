@@ -84,6 +84,9 @@ export default function Payment({ session, onBack }: PaymentProps) {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedFull, setCopiedFull] = useState(false);
+
+  // 입금 확인 완료/실패 메시지 모달
+  const [paymentResultModal, setPaymentResultModal] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [orders, setOrders] = useState<PaymentOrder[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
@@ -146,7 +149,10 @@ export default function Payment({ session, onBack }: PaymentProps) {
         status: 'pending',
       });
       if (error) throw error;
-      alert('입금 확인 요청이 제출되었습니다!\n입금 후 관리자 확인까지 잠시 기다려주세요.');
+      setPaymentResultModal({ 
+        type: 'success', 
+        message: '입금 확인 요청이 제출되었습니다!\n입금 후 관리자가 확인할 때까지 잠시 기다려주세요.\n(통상 24시간 이내 처리됩니다)' 
+      });
       const { data } = await supabase
         .from('payment_orders')
         .select('*')
@@ -155,7 +161,7 @@ export default function Payment({ session, onBack }: PaymentProps) {
       setOrders((data as PaymentOrder[]) ?? []);
       setSelectedPlan(null);
     } catch (err: any) {
-      alert('주문 실패: ' + err.message);
+      setPaymentResultModal({ type: 'error', message: '주문 실패: ' + err.message });
     } finally {
       setSubmitting(false);
     }
@@ -265,11 +271,25 @@ export default function Payment({ session, onBack }: PaymentProps) {
                 <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>전문 컨설턴트 심층 첨삭</div>
               </div>
             </div>
-            <div style={{ marginTop: '12px', padding: '10px 14px', borderRadius: '10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#475569' }}>
-                <Shield size={14} color="#16a34a" />
-                <span style={{ fontWeight: '600' }}>매월 자동 리뉴얼</span>
-                <span style={{ color: '#94a3b8' }}>· 3개월/6개월 플랜은 매월 토큰이 자동 충전됩니다</span>
+            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ padding: '12px 14px', borderRadius: '10px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                <Shield size={16} color="#16a34a" style={{ marginTop: '2px', flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '800', color: '#166534', marginBottom: '2px' }}>매월 자동 충전 &amp; 이월 (누적)</div>
+                  <div style={{ fontSize: '12px', color: '#14532d', lineHeight: 1.5 }}>
+                    3개월/6개월 플랜은 매월 결제일 기준 <strong style={{ color: '#065f46' }}>새로운 토큰이 기존 토큰에 추가로 누적(이월) 충전</strong>됩니다. (사용하지 않은 토큰은 소멸되지 않고 합산됩니다)
+                  </div>
+                </div>
+              </div>
+              <div style={{ padding: '12px 14px', borderRadius: '10px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                <div style={{ fontSize: '16px', lineHeight: 1, flexShrink: 0, marginTop: '2px' }}>🧊</div>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '800', color: '#1e40af', marginBottom: '2px' }}>토큰 동결 및 100% 복구 정책</div>
+                  <div style={{ fontSize: '12px', color: '#1e3a8a', lineHeight: 1.5 }}>
+                    회원권이 만료되면 남은 토큰은 즉시 <strong style={{ color: '#172554' }}>동결(사용 중지)</strong> 처리됩니다.<br/>
+                    단, 만료일 기준 <strong style={{ color: '#172554' }}>30일 이내에 재결제 시 동결된 기존 토큰이 모두 복구되어 새 토큰과 합산</strong>됩니다!
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -565,6 +585,29 @@ export default function Payment({ session, onBack }: PaymentProps) {
           </div>
         </div>
       </div>
+
+      {/* 결제 요청 결과 모달 */}
+      {paymentResultModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15,23,42,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' }} onClick={() => setPaymentResultModal(null)}>
+          <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '16px', maxWidth: '400px', width: '90%', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '48px', height: '48px', borderRadius: '50%', backgroundColor: paymentResultModal.type === 'success' ? '#f0fdf4' : '#fef2f2', marginBottom: '16px' }}>
+              {paymentResultModal.type === 'success' 
+                ? <CheckCircle2 size={24} color="#16a34a" />
+                : <XCircle size={24} color="#dc2626" />
+              }
+            </div>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>
+              {paymentResultModal.type === 'success' ? '요청 완료' : '요청 실패'}
+            </h3>
+            <p style={{ margin: '0 0 24px 0', fontSize: '15px', color: '#475569', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+              {paymentResultModal.message}
+            </p>
+            <button onClick={() => setPaymentResultModal(null)} style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', backgroundColor: '#0f172a', color: '#ffffff', fontSize: '15px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s' }}>
+              확인
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
