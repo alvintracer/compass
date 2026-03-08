@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
-import { Sparkles, Plus, ChevronDown, ChevronUp, Save, UserCheck, MessageSquare, Loader2, Target } from 'lucide-react';
+import { Sparkles, Plus, ChevronDown, ChevronUp, Save, UserCheck, MessageSquare, Loader2, Target, Trash2, PenLine, X } from 'lucide-react';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 
 interface InterviewQnAProps {
@@ -19,9 +19,23 @@ interface Question {
   question: string;
   answer_text: string;
   status: 'pending' | 'submitted' | 'completed';
-  revised_answer: string;     // 🌟 추가
+  revised_answer: string;
   feedback_content: string;
 }
+
+// 기본 질문 10개 (대학 입학면접 공통 질문)
+const DEFAULT_BASIC_QUESTIONS = [
+  '간략한 자기소개를 해주세요.',
+  '본인의 장점과 단점은 무엇이라고 생각하나요?',
+  '가장 존경하는 인물은 누구이며, 그 이유는 무엇인가요?',
+  '타인을 위해 희생하거나 봉사한 경험이 있다면 말씀해 주세요. 그때 느낀 점은 무엇인가요?',
+  '살면서 가장 힘들었던 일과 그것을 극복한 방법은 무엇인가요?',
+  '고등학교 생활 중 가장 의미 있었던 활동은 무엇이며, 무엇을 배웠나요?',
+  '우리 대학(학교)에 지원한 이유는 무엇인가요?',
+  '10년 후 자신의 모습을 어떻게 그리고 있나요?',
+  '최근 사회적 이슈 중 가장 관심이 가는 것은 무엇이며, 본인의 생각은 어떤가요?',
+  '팀 프로젝트나 단체 활동에서 갈등이 생겼을 때 어떻게 해결했나요?',
+];
 
 export default function InterviewQnA({ session }: InterviewQnAProps) {
   const { isMobile } = useBreakpoint();
@@ -34,8 +48,14 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [isPathLoading, setIsPathLoading] = useState(true);
-  // DB 중복 인서트 방지용 플래그
   const isInsertingRef = useRef(false);
+
+  // 직접 질문 추가용
+  const [showManualAdd, setShowManualAdd] = useState(false);
+  const [manualQuestion, setManualQuestion] = useState('');
+
+  // Path 삭제 확인
+  const [deletingPathId, setDeletingPathId] = useState<string | null>(null);
 
   // 1. 초기 데이터 로드
   useEffect(() => {
@@ -58,32 +78,47 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
           .order('created_at', { ascending: true });
 
         if (pathData && pathData.length > 0) {
-          // 🌟 [수정됨] 중복 Path가 생성된 경우 (React Strict Mode 더블 렌더링으로 인해)
-          // 첫 번째(가장 오래된) 중복 항목을 DB에서 삭제하고 두 번째 것을 사용
-          if (pathData.length >= 2 && pathData[0].title === pathData[1].title && pathData[0].title === '기본 진로 방향') {
+          // 중복 Path가 생성된 경우 (React 더블 렌더링으로 인해)
+          if (pathData.length >= 2 && pathData[0].title === pathData[1].title && (pathData[0].title === '기본 진로 방향' || pathData[0].title === '기본 질문')) {
             const duplicateId = pathData[0].id;
             await supabase.from('career_paths').delete().eq('id', duplicateId);
-            const cleanPaths = pathData.slice(1); // 첫 번째 중복 제거
+            const cleanPaths = pathData.slice(1);
             setPaths(cleanPaths);
             setActivePathId(cleanPaths[0].id);
           } else {
+            // '기본 진로 방향' → '기본 질문' 자동 마이그레이션
+            const basicPath = pathData.find(p => p.title === '기본 진로 방향');
+            if (basicPath) {
+              await supabase.from('career_paths').update({ title: '기본 질문' }).eq('id', basicPath.id);
+              basicPath.title = '기본 질문';
+            }
             setPaths(pathData);
             setActivePathId(pathData[0].id);
           }
         } else {
-          // Path가 없을 때만 새로 생성 (더블 렌더링 방어)
+          // Path가 없을 때만 새로 생성
           if (isInsertingRef.current) return;
           isInsertingRef.current = true;
 
           const { data: newPath } = await supabase
             .from('career_paths')
-            .insert([{ user_id: session.user.id, identity_id: idDoc.id, title: '기본 진로 방향' }])
+            .insert([{ user_id: session.user.id, identity_id: idDoc.id, title: '기본 질문' }])
             .select()
             .single();
             
           if (newPath) {
             setPaths([newPath]);
             setActivePathId(newPath.id);
+
+            // 기본 질문 10개 자동 삽입
+            const questionsToInsert = DEFAULT_BASIC_QUESTIONS.map(q => ({
+              user_id: session.user.id,
+              path_id: newPath.id,
+              question: q,
+              answer_text: '',
+              status: 'pending',
+            }));
+            await supabase.from('interview_qnas').insert(questionsToInsert);
           }
           
           isInsertingRef.current = false;
@@ -103,7 +138,7 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
       
       const { data: qData } = await supabase
         .from('interview_qnas')
-        .select('id, question, answer_text, status, feedback_content')
+        .select('id, question, answer_text, status, feedback_content, revised_answer')
         .eq('path_id', activePathId)
         .order('created_at', { ascending: true });
         
@@ -117,8 +152,8 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
   // 새로운 진로 Path 추가
   const handleAddPath = async () => {
     if (!identityData) return;
-    if (paths.length >= 3) {
-      alert('진로 Path는 최대 3개까지 생성할 수 있어요.');
+    if (paths.length >= 5) {
+      alert('Path는 최대 5개까지 생성할 수 있어요.');
       return;
     }
 
@@ -147,6 +182,33 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
     }
   };
 
+  // Path 삭제 (하위 질문 모두 삭제)
+  const handleDeletePath = async (pathId: string) => {
+    try {
+      // 하위 질문 모두 삭제
+      await supabase.from('interview_qnas').delete().eq('path_id', pathId);
+      // Path 삭제
+      await supabase.from('career_paths').delete().eq('id', pathId);
+      
+      const updated = paths.filter(p => p.id !== pathId);
+      setPaths(updated);
+      setDeletingPathId(null);
+      
+      if (activePathId === pathId) {
+        setActivePathId(updated.length > 0 ? updated[0].id : null);
+      }
+    } catch (err: any) {
+      alert('삭제 중 오류: ' + err.message);
+    }
+  };
+
+  // 개별 질문 삭제
+  const handleDeleteQuestion = async (qId: string) => {
+    if (!confirm('이 질문과 답변을 삭제할까요?')) return;
+    await supabase.from('interview_qnas').delete().eq('id', qId);
+    setQuestions(prev => prev.filter(q => q.id !== qId));
+  };
+
   // 3. AI 면접 질문 생성 (최초 생성 & 추가 생성 공통)
   const handleGenerateQuestions = async () => {
     if (!identityData || !activePathId) return;
@@ -157,8 +219,6 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
       if (tokenError) throw new Error('AI 토큰이 부족합니다.');
 
       const activePathTitle = paths.find(p => p.id === activePathId)?.title || '';
-
-      // 🌟 [수정됨] 기존 질문 목록을 함께 전달 → AI가 중복 없이 새 질문 생성
       const existingQuestions = questions.map(q => q.question);
 
       const { data, error } = await supabase.functions.invoke('process-interview', {
@@ -166,7 +226,7 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
           action: 'generate_questions',
           identityContent: identityData.content,
           pathName: activePathTitle,
-          existingQuestions, // 기존 질문 전달 (중복 방지용)
+          existingQuestions,
         }
       });
 
@@ -194,6 +254,30 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
     }
   };
 
+  // 직접 질문 추가
+  const handleAddManualQuestion = async () => {
+    if (!manualQuestion.trim() || !activePathId) return;
+    try {
+      const { data: inserted, error } = await supabase.from('interview_qnas').insert([{
+        user_id: session.user.id,
+        path_id: activePathId,
+        question: manualQuestion.trim(),
+        answer_text: '',
+        status: 'pending',
+      }]).select().single();
+
+      if (error) throw new Error(error.message);
+      if (inserted) {
+        setQuestions(prev => [...prev, inserted as Question]);
+        setManualQuestion('');
+        setShowManualAdd(false);
+        setExpandedQ(inserted.id);
+      }
+    } catch (err: any) {
+      alert('질문 추가 중 오류: ' + err.message);
+    }
+  };
+
   const handleAnswerChange = (qId: string, value: string) => {
     setQuestions(questions.map(q => q.id === qId ? { ...q, answer_text: value } : q));
   };
@@ -215,47 +299,44 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
     }
 
     if (type === 'ai') {
-  setIsEvaluating(true);
-  try {
-    const { data: tokenRemaining, error: tokenError } = await supabase.rpc('decrement_ai_token', { target_user_id: session.user.id });
-    if (tokenError) throw new Error('AI 토큰이 부족합니다.');
+      setIsEvaluating(true);
+      try {
+        const { data: tokenRemaining, error: tokenError } = await supabase.rpc('decrement_ai_token', { target_user_id: session.user.id });
+        if (tokenError) throw new Error('AI 토큰이 부족합니다.');
 
-    const { data, error } = await supabase.functions.invoke('process-interview', {
-      body: { action: 'evaluate_answer', questionText: q.question, answerText: q.answer_text }
-    });
+        const { data, error } = await supabase.functions.invoke('process-interview', {
+          body: { action: 'evaluate_answer', questionText: q.question, answerText: q.answer_text }
+        });
 
-    if (error) throw new Error(error.message);
+        if (error) throw new Error(error.message);
 
-    // 🌟 [수정됨] 첨삭 답변 / 코멘트 파싱
-    const resultText: string = data.result;
-    const revisedMatch = resultText.match(/\[첨삭된 답변\]([\s\S]*?)(?=\[컨설턴트 코멘트\]|$)/);
-    const commentMatch = resultText.match(/\[컨설턴트 코멘트\]([\s\S]*?)$/);
+        const resultText: string = data.result;
+        const revisedMatch = resultText.match(/\[첨삭된 답변\]([\s\S]*?)(?=\[컨설턴트 코멘트\]|$)/);
+        const commentMatch = resultText.match(/\[컨설턴트 코멘트\]([\s\S]*?)$/);
 
-    const revisedAnswer = revisedMatch ? revisedMatch[1].trim() : '';
-    const feedbackComment = commentMatch ? commentMatch[1].trim() : resultText;
+        const revisedAnswer = revisedMatch ? revisedMatch[1].trim() : '';
+        const feedbackComment = commentMatch ? commentMatch[1].trim() : resultText;
 
-    await supabase.from('interview_qnas').update({
-      status: 'completed',
-      revised_answer: revisedAnswer,   // 첨삭된 답변
-      feedback_content: feedbackComment, // 코멘트
-      answer_text: q.answer_text
-    }).eq('id', qId);
+        await supabase.from('interview_qnas').update({
+          status: 'completed',
+          revised_answer: revisedAnswer,
+          feedback_content: feedbackComment,
+          answer_text: q.answer_text
+        }).eq('id', qId);
 
-    setQuestions(questions.map(item =>
-      item.id === qId
-        ? { ...item, status: 'completed', revised_answer: revisedAnswer, feedback_content: feedbackComment }
-        : item
-    ));
+        setQuestions(questions.map(item =>
+          item.id === qId
+            ? { ...item, status: 'completed', revised_answer: revisedAnswer, feedback_content: feedbackComment }
+            : item
+        ));
 
-    alert(`✨ AI 첨삭이 완료되었습니다! (남은 AI 토큰: ${tokenRemaining}개)`);
-
-  } catch (err: any) {
-    alert(err.message);
-  } finally {
-    setIsEvaluating(false);
-  }
-} else {
-      // 휴먼 컨설턴트 (한태우) - 1 컨설턴트 토큰 사용
+        alert(`✨ AI 첨삭이 완료되었습니다! (남은 AI 토큰: ${tokenRemaining}개)`);
+      } catch (err: any) {
+        alert(err.message);
+      } finally {
+        setIsEvaluating(false);
+      }
+    } else {
       const confirm = window.confirm('컨설턴트 첨삭을 요청하시겠어요? (1 컨설턴트 토큰 사용)');
       if (confirm) {
         try {
@@ -265,7 +346,6 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
           await supabase.from('interview_qnas').update({ status: 'submitted', answer_text: q.answer_text }).eq('id', qId);
           setQuestions(questions.map(item => item.id === qId ? { ...item, status: 'submitted' } : item));
 
-          // 텔레그램 알림 트리거
           await supabase.functions.invoke('process-interview', {
             body: { action: 'human_request', qnaId: qId }
           });
@@ -281,6 +361,9 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
   if (isPathLoading) {
     return <div style={{ padding: isMobile ? '20px' : '40px', textAlign: 'center' }}><Loader2 className="animate-spin" /> 데이터를 불러오는 중...</div>;
   }
+
+  const activePathTitle = paths.find(p => p.id === activePathId)?.title || '';
+  const isBasicPath = activePathTitle === '기본 질문';
 
   return (
     <div style={{ backgroundColor: '#ffffff', padding: isMobile ? '20px' : '40px', borderRadius: '20px', border: '1px solid #e2e8f0', position: 'relative', overflow: 'hidden' }}>
@@ -299,7 +382,9 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
         <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(6px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
           <div style={{ width: '56px', height: '56px', border: '4px solid #e2e8f0', borderTopColor: '#16a34a', borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: '20px' }} />
           <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#0f172a', fontWeight: '700' }}>맞춤형 면접 질문을 생성하고 있어요</h3>
-          <p style={{ margin: 0, fontSize: '14px', color: '#64748b' }}>정의서를 분석해서 날카로운 질문을 만들고 있습니다...</p>
+          <p style={{ margin: 0, fontSize: '14px', color: '#64748b' }}>
+            {isBasicPath ? '대학 입학면접 공통 질문을 만들고 있습니다...' : '정의서를 분석해서 날카로운 질문을 만들고 있습니다...'}
+          </p>
         </div>
       )}
 
@@ -313,45 +398,92 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
       </div>
 
       {/* Path 탭 */}
-      <div style={{ display: 'flex', gap: '12px', marginBottom: isMobile ? '16px' : '24px', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', overflowX: isMobile ? 'auto' : 'visible', flexWrap: isMobile ? 'nowrap' : 'wrap' }}>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: isMobile ? '16px' : '24px', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', overflowX: isMobile ? 'auto' : 'visible', flexWrap: isMobile ? 'nowrap' : 'wrap', alignItems: 'center' }}>
         {paths.map(path => (
-          <button
-            key={path.id}
-            onClick={() => setActivePathId(path.id)}
-            style={{
-              padding: '10px 20px', borderRadius: '20px', fontSize: '15px', fontWeight: '600', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s ease', flexShrink: 0,
-              backgroundColor: activePathId === path.id ? '#0f172a' : '#f8fafc',
-              color: activePathId === path.id ? '#ffffff' : '#64748b',
-              border: activePathId === path.id ? '1px solid #0f172a' : '1px solid #e2e8f0',
-            }}
-          >
-            <Target size={16} /> {path.title}
-          </button>
+          <div key={path.id} style={{ position: 'relative', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <button
+              onClick={() => setActivePathId(path.id)}
+              style={{
+                padding: '10px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s ease',
+                backgroundColor: activePathId === path.id ? '#0f172a' : '#f8fafc',
+                color: activePathId === path.id ? '#ffffff' : '#64748b',
+                border: activePathId === path.id ? '1px solid #0f172a' : '1px solid #e2e8f0',
+                paddingRight: activePathId === path.id ? '12px' : '20px',
+              }}
+            >
+              <Target size={15} /> {path.title}
+              {activePathId === path.id && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setDeletingPathId(path.id); }}
+                  style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginLeft: '4px', padding: 0 }}
+                >
+                  <Trash2 size={12} color="#ffffff" />
+                </button>
+              )}
+            </button>
+          </div>
         ))}
-        {paths.length < 3 && (
+        {paths.length < 5 && (
           <button 
             onClick={handleAddPath}
-            style={{ padding: '10px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#ffffff', color: '#2563eb', border: '1px dashed #bfdbfe' }}
+            style={{ padding: '10px 20px', borderRadius: '20px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#ffffff', color: '#2563eb', border: '1px dashed #bfdbfe', flexShrink: 0 }}
           >
             <Plus size={16} /> Path 추가
           </button>
         )}
       </div>
 
+      {/* Path 삭제 확인 */}
+      {deletingPathId && (
+        <div style={{ marginBottom: '16px', padding: '16px 20px', backgroundColor: '#fef2f2', borderRadius: '14px', border: '1px solid #fecaca' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <Trash2 size={18} color="#dc2626" />
+            <div>
+              <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#991b1b' }}>
+                "{paths.find(p => p.id === deletingPathId)?.title}" Path를 삭제할까요?
+              </h4>
+              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#b91c1c' }}>
+                이 Path에 포함된 모든 질문과 답변이 영구 삭제됩니다.
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+            <button onClick={() => setDeletingPathId(null)} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #d1d5db', backgroundColor: '#ffffff', color: '#6b7280', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+              취소
+            </button>
+            <button onClick={() => handleDeletePath(deletingPathId)} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#dc2626', color: '#ffffff', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
+              삭제하기
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 질문 없을 때 */}
       {questions.length === 0 ? (
         <div style={{ padding: '64px 20px', textAlign: 'center', backgroundColor: '#f8fafc', borderRadius: '16px', border: '1px dashed #cbd5e1' }}>
           <MessageSquare size={48} color="#94a3b8" strokeWidth={1.5} style={{ marginBottom: '16px' }} />
           <h4 style={{ margin: '0 0 12px 0', fontSize: isMobile ? '16px' : '18px', color: '#0f172a', fontWeight: '700' }}>아직 생성된 면접 질문이 없어요</h4>
-          <p style={{ margin: '0 0 24px 0', color: '#64748b', fontSize: '15px' }}>학생의 본질 정의서를 바탕으로 AI가 최적의 예상 질문을 뽑아줍니다.</p>
-          <button 
-            onClick={handleGenerateQuestions} disabled={isGenerating || !identityData}
-            style={{ padding: '14px 28px', backgroundColor: '#2563eb', color: '#ffffff', border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: (isGenerating || !identityData) ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)', opacity: (isGenerating || !identityData) ? 0.7 : 1 }}
-          >
-            {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-            {isGenerating ? 'AI가 질문을 생성 중입니다...' : '면접 질문 생성하기 '}
-          </button>
+          <p style={{ margin: '0 0 24px 0', color: '#64748b', fontSize: '15px' }}>
+            {isBasicPath
+              ? 'AI가 대학 입학면접 공통 질문을 생성해 드립니다.'
+              : '학생의 본질 정의서를 바탕으로 AI가 최적의 예상 질문을 뽑아줍니다.'}
+          </p>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button 
+              onClick={handleGenerateQuestions} disabled={isGenerating || !identityData}
+              style={{ padding: '14px 28px', backgroundColor: '#2563eb', color: '#ffffff', border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: (isGenerating || !identityData) ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)', opacity: (isGenerating || !identityData) ? 0.7 : 1 }}
+            >
+              {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+              {isGenerating ? 'AI가 질문을 생성 중입니다...' : 'AI 면접 질문 생성하기'}
+            </button>
+            <button
+              onClick={() => setShowManualAdd(true)}
+              style={{ padding: '14px 28px', backgroundColor: '#ffffff', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px' }}
+            >
+              <PenLine size={18} /> 직접 질문 추가
+            </button>
+          </div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -365,10 +497,18 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
                   <span style={{ fontSize: '16px', fontWeight: '800', color: '#2563eb' }}>Q{index + 1}.</span>
                   <h4 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: '600', lineHeight: '1.5', flex: 1 }}>{q.question}</h4>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '16px' }}>
                   {q.status === 'pending' && <span style={{ padding: '4px 10px', backgroundColor: '#f1f5f9', color: '#64748b', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>작성중</span>}
                   {q.status === 'submitted' && <span style={{ padding: '4px 10px', backgroundColor: '#fef3c7', color: '#d97706', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>컨설턴트 대기중</span>}
                   {q.status === 'completed' && <span style={{ padding: '4px 10px', backgroundColor: '#dcfce3', color: '#166534', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>첨삭 완료</span>}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteQuestion(q.id); }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '6px', display: 'flex', alignItems: 'center', opacity: 0.4, transition: 'opacity 0.15s' }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                    onMouseLeave={e => e.currentTarget.style.opacity = '0.4'}
+                  >
+                    <Trash2 size={15} color="#ef4444" />
+                  </button>
                   {expandedQ === q.id ? <ChevronUp size={20} color="#94a3b8" /> : <ChevronDown size={20} color="#94a3b8" />}
                 </div>
               </div>
@@ -436,8 +576,8 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
             </div>
           ))}
 
-          {/* 🌟 [추가됨] 질문 추가 생성 버튼 - 질문 목록 하단에 항상 표시 */}
-          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '8px' }}>
+          {/* 하단 액션 버튼들 */}
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', paddingTop: '8px', flexWrap: 'wrap' }}>
             <button
               onClick={handleGenerateQuestions}
               disabled={isGenerating || !identityData}
@@ -457,8 +597,65 @@ export default function InterviewQnA({ session }: InterviewQnAProps) {
                 transition: 'all 0.2s ease',
               }}
             >
-              {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-              {isGenerating ? '질문 생성 중...' : `질문 3개 더 추가하기  · 현재 ${questions.length}개`}
+              {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+              {isGenerating ? '질문 생성 중...' : `AI 질문 3개 추가 · 현재 ${questions.length}개`}
+            </button>
+
+            <button
+              onClick={() => setShowManualAdd(!showManualAdd)}
+              style={{
+                padding: '12px 24px',
+                backgroundColor: '#ffffff',
+                color: '#475569',
+                border: '1px dashed #cbd5e1',
+                borderRadius: '12px',
+                fontSize: '14px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <PenLine size={16} /> 직접 질문 추가
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 직접 질문 추가 입력창 */}
+      {showManualAdd && (
+        <div style={{ marginTop: '16px', padding: '20px', backgroundColor: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <label style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <PenLine size={16} color="#2563eb" /> 직접 질문 입력
+            </label>
+            <button onClick={() => { setShowManualAdd(false); setManualQuestion(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+              <X size={18} color="#94a3b8" />
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
+            <input
+              value={manualQuestion}
+              onChange={e => setManualQuestion(e.target.value)}
+              placeholder="면접 예상 질문을 직접 입력하세요."
+              onKeyDown={e => { if (e.key === 'Enter') handleAddManualQuestion(); }}
+              style={{ flex: 1, padding: '12px 16px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '15px', outline: 'none', fontFamily: 'inherit' }}
+            />
+            <button
+              onClick={handleAddManualQuestion}
+              disabled={!manualQuestion.trim()}
+              style={{
+                padding: '12px 24px', borderRadius: '10px', border: 'none',
+                backgroundColor: manualQuestion.trim() ? '#2563eb' : '#e2e8f0',
+                color: manualQuestion.trim() ? '#ffffff' : '#94a3b8',
+                fontSize: '14px', fontWeight: '700', cursor: manualQuestion.trim() ? 'pointer' : 'not-allowed',
+                display: 'flex', alignItems: 'center', gap: '6px',
+                ...(isMobile ? { width: '100%', justifyContent: 'center' } : {}),
+              }}
+            >
+              <Plus size={16} /> 추가
             </button>
           </div>
         </div>

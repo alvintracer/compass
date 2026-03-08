@@ -41,7 +41,7 @@ interface IdentityDoc    { id: string; content: string; status: string; updated_
 interface InterviewQnA   {
   id: string; question: string; answer_text: string;
   feedback_content: string | null; revised_answer: string | null;
-  status: string; created_at: string; path_title?: string;
+  status: string; created_at: string; path_id: string; path_title?: string;
 }
 interface SchoolRecordImg { id: string; file_name: string; public_url: string; created_at: string; }
 interface AdminMessage    { id: string; sender: string; receiver_role: string; content: string; is_read: boolean; created_at: string; }
@@ -53,7 +53,7 @@ const formatDate = (d: string) => {
 
 // ── 학생 상세 패널 ─────────────────────────────────────────────────────────
 function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBack: () => void }) {
-  const [tab, setTab]             = useState<'identity' | 'interview' | 'schoolrecord' | 'messages' | 'progress' | 'tasks'>('identity');
+  const [tab, setTab]             = useState<'identity' | 'interview' | 'research' | 'schoolrecord' | 'messages' | 'progress' | 'tasks'>('identity');
   const [isLoading, setIsLoading] = useState(true);
 
   // 토큰
@@ -95,6 +95,15 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
   const [editingQna, setEditingQna]   = useState(false);
   const [qnaDraft, setQnaDraft]       = useState({ question: '', answer_text: '', revised_answer: '', feedback_content: '' });
   const [savingQna, setSavingQna]     = useState(false);
+  const [studentPaths, setStudentPaths] = useState<{id: string; title: string}[]>([]);
+
+  // 탐구 과제
+  interface ResearchTask { id: string; topic: string; content_text: string; status: string; feedback_content: string | null; revised_content: string | null; path_id: string; path_title?: string; created_at: string; }
+  const [researchTasks, setResearchTasks] = useState<ResearchTask[]>([]);
+  const [selectedResearch, setSelectedResearch] = useState<ResearchTask | null>(null);
+  const [editingResearch, setEditingResearch] = useState(false);
+  const [researchDraft, setResearchDraft] = useState({ topic: '', content_text: '', feedback_content: '', revised_content: '' });
+  const [savingResearch, setSavingResearch] = useState(false);
 
   // 생활기록부
   const [srImages, setSrImages]   = useState<SchoolRecordImg[]>([]);
@@ -142,13 +151,31 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
       .from('interview_qnas')
       .select('id, question, answer_text, feedback_content, revised_answer, status, created_at, path_id')
       .eq('user_id', student.id).order('created_at', { ascending: false });
-    const pathIds = [...new Set((qnaData?.map((q: any) => q.path_id).filter(Boolean) || []))];
+    // 학생의 전체 career_paths 조회 (기본 질문 포함)
     const pathMap: Record<string, string> = {};
-    if (pathIds.length > 0) {
-      const { data: paths } = await supabase.from('career_paths').select('id, title').in('id', pathIds);
-      paths?.forEach((p: any) => { pathMap[p.id] = p.title; });
+    if (doc) {
+      const { data: allPaths } = await supabase.from('career_paths').select('id, title').eq('identity_id', doc.id).order('created_at', { ascending: true });
+      if (allPaths) {
+        allPaths.forEach((p: any) => { pathMap[p.id] = p.title; });
+        setStudentPaths(allPaths as {id: string; title: string}[]);
+      }
+    } else {
+      // 정의서 없는 경우 기존 Q&A에서 path 추출
+      const pathIds = [...new Set((qnaData?.map((q: any) => q.path_id).filter(Boolean) || []))];
+      if (pathIds.length > 0) {
+        const { data: paths } = await supabase.from('career_paths').select('id, title').in('id', pathIds);
+        paths?.forEach((p: any) => { pathMap[p.id] = p.title; });
+        setStudentPaths((paths as {id: string; title: string}[]) || []);
+      }
     }
     setQnas((qnaData || []).map((q: any) => ({ ...q, path_title: pathMap[q.path_id] || '' })));
+
+    // 탐구 과제
+    const { data: researchData } = await supabase
+      .from('research_tasks')
+      .select('id, topic, content_text, status, feedback_content, revised_content, path_id, created_at')
+      .eq('user_id', student.id).order('created_at', { ascending: false });
+    setResearchTasks((researchData || []).map((r: any) => ({ ...r, path_title: pathMap[r.path_id] || '' })));
 
     // 생활기록부
     const { data: imgs } = await supabase
@@ -385,6 +412,7 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
       <div style={{ display: 'flex', backgroundColor: '#ffffff', borderRadius: '14px 14px 0 0', border: '1px solid #e2e8f0', borderBottom: 'none', overflowX: 'auto' }}>
         <button style={TAB(tab === 'identity')}     onClick={() => setTab('identity')}>📋 정의서</button>
         <button style={TAB(tab === 'interview')}    onClick={() => setTab('interview')}>🎤 면접</button>
+        <button style={TAB(tab === 'research')}     onClick={() => setTab('research')}>📖 탐구</button>
         <button style={TAB(tab === 'progress')}     onClick={() => { setTab('progress'); loadProgressData(); }}>📊 성취도</button>
         <button style={TAB(tab === 'tasks')}         onClick={() => { setTab('tasks'); loadProgressData(); }}>📋 과제</button>
         <button style={TAB(tab === 'schoolrecord')} onClick={() => setTab('schoolrecord')}>📚 생기부</button>
@@ -472,11 +500,69 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
               </div>
             </div>
           ) : (
-            qnas.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '48px', color: '#94a3b8', fontSize: '14px' }}>면접 Q&A가 없어요</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {qnas.map(qna => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* 컨설턴트가 직접 질문 추가 */}
+              {(() => {
+                const uniquePaths = studentPaths.map(p => [p.id, p.title] as [string, string]);
+                return (
+                  <div style={{ padding: '16px 20px', backgroundColor: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: '#475569', marginBottom: '10px' }}>질문 직접 추가</label>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      {uniquePaths.length > 0 && (
+                        <select
+                          id="admin-add-qna-path"
+                          style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', outline: 'none' }}
+                        >
+                          {uniquePaths.map(([pid, ptitle]) => (
+                            <option key={pid} value={pid}>{ptitle}</option>
+                          ))}
+                        </select>
+                      )}
+                      <input
+                        id="admin-add-qna-input"
+                        placeholder="새 면접 질문을 입력하세요"
+                        style={{ flex: 1, minWidth: '200px', padding: '8px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontFamily: 'inherit' }}
+                        onKeyDown={async (e) => {
+                          if (e.key === 'Enter') {
+                            const input = document.getElementById('admin-add-qna-input') as HTMLInputElement;
+                            const pathSelect = document.getElementById('admin-add-qna-path') as HTMLSelectElement;
+                            const q = input?.value?.trim();
+                            const pathId = pathSelect?.value;
+                            if (!q || !pathId) return;
+                            await supabase.from('interview_qnas').insert([{
+                              user_id: student.id, path_id: pathId, question: q, answer_text: '', status: 'pending',
+                            }]);
+                            input.value = '';
+                            loadAll();
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={async () => {
+                          const input = document.getElementById('admin-add-qna-input') as HTMLInputElement;
+                          const pathSelect = document.getElementById('admin-add-qna-path') as HTMLSelectElement;
+                          const q = input?.value?.trim();
+                          const pathId = pathSelect?.value;
+                          if (!q || !pathId) { alert('질문을 입력하고 Path를 선택해주세요.'); return; }
+                          await supabase.from('interview_qnas').insert([{
+                            user_id: student.id, path_id: pathId, question: q, answer_text: '', status: 'pending',
+                          }]);
+                          input.value = '';
+                          loadAll();
+                        }}
+                        style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#0f172a', color: '#ffffff', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}
+                      >
+                        <Plus size={13} /> 추가
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {qnas.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '48px', color: '#94a3b8', fontSize: '14px' }}>면접 Q&A가 없어요</div>
+              ) : (
+                qnas.map(qna => (
                   <div key={qna.id}
                     style={{ padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', transition: 'all 0.15s' }}
                     onMouseEnter={e => e.currentTarget.style.borderColor = '#2563eb'}
@@ -502,13 +588,171 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
                           style={{ padding: '5px 12px', borderRadius: '7px', border: 'none', backgroundColor: '#0f172a', color: '#ffffff', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <Pencil size={11} /> 편집
                         </button>
+                        <button onClick={async () => {
+                          if (!confirm(`이 질문을 삭제할까요?\n"${qna.question.substring(0, 50)}..."`)) return;
+                          await supabase.from('interview_qnas').delete().eq('id', qna.id);
+                          setQnas(prev => prev.filter(q => q.id !== qna.id));
+                        }}
+                          style={{ padding: '5px 8px', borderRadius: '7px', border: 'none', backgroundColor: '#fee2e2', color: '#dc2626', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <X size={13} />
+                        </button>
                       </div>
                     </div>
                     <p style={{ margin: '8px 0 0 0', fontSize: '11px', color: '#94a3b8' }}>{formatDate(qna.created_at)}</p>
                   </div>
+                ))
+              )}
+            </div>
+          )
+
+        ) : tab === 'research' ? (
+
+          // ── 탐구 과제 탭 ─────────────────────────────────────────────────
+          editingResearch && selectedResearch ? (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <button onClick={() => setEditingResearch(false)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '7px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', color: '#64748b', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                  <ChevronLeft size={13} /> 목록
+                </button>
+                <button onClick={async () => {
+                  if (!selectedResearch) return;
+                  setSavingResearch(true);
+                  await supabase.from('research_tasks').update({
+                    topic: researchDraft.topic,
+                    content_text: researchDraft.content_text,
+                    feedback_content: researchDraft.feedback_content || null,
+                    revised_content: researchDraft.revised_content || null,
+                    updated_at: new Date().toISOString(),
+                  }).eq('id', selectedResearch.id);
+                  setResearchTasks(prev => prev.map(r => r.id === selectedResearch.id ? { ...r, ...researchDraft } : r));
+                  setEditingResearch(false);
+                  setSavingResearch(false);
+                }} disabled={savingResearch}
+                  style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#0f172a', color: '#ffffff', fontSize: '13px', fontWeight: '700', cursor: savingResearch ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', opacity: savingResearch ? 0.7 : 1 }}>
+                  {savingResearch ? <Loader2 size={13} /> : <Save size={13} />} 저장
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {([
+                  { label: '탐구 주제',      key: 'topic',            placeholder: '탐구 주제',          rows: 2 },
+                  { label: '조사 내용',      key: 'content_text',     placeholder: '조사 내용',          rows: 8 },
+                  { label: '컨설턴트 코멘트', key: 'feedback_content', placeholder: '코멘트 (선택)',      rows: 4 },
+                  { label: '첨삭된 내용',    key: 'revised_content',  placeholder: '첨삭된 내용 (선택)', rows: 6 },
+                ] as const).map(({ label, key, placeholder, rows }) => (
+                  <div key={key}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', fontWeight: '700', color: '#475569' }}>{label}</label>
+                    <textarea value={(researchDraft as any)[key] || ''} onChange={e => setResearchDraft(prev => ({ ...prev, [key]: e.target.value }))}
+                      placeholder={placeholder} rows={rows}
+                      style={{ width: '100%', padding: '12px 16px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '14px', outline: 'none', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box', lineHeight: 1.7, color: '#334155' }} />
+                  </div>
                 ))}
               </div>
-            )
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* 컨설턴트가 직접 과제 추가 */}
+              {(() => {
+                const researchPaths = studentPaths.map(p => [p.id, p.title] as [string, string]);
+                return (
+                  <div style={{ padding: '16px 20px', backgroundColor: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: '#475569', marginBottom: '10px' }}>탐구 과제 직접 추가</label>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      {researchPaths.length > 0 && (
+                        <select id="admin-add-research-path"
+                          style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', outline: 'none' }}>
+                          {researchPaths.map(([pid, ptitle]) => (
+                            <option key={pid} value={pid}>{ptitle}</option>
+                          ))}
+                        </select>
+                      )}
+                      <input id="admin-add-research-input"
+                        placeholder="새 탐구 주제를 입력하세요"
+                        style={{ flex: 1, minWidth: '200px', padding: '8px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontFamily: 'inherit' }}
+                        onKeyDown={async (e) => {
+                          if (e.key === 'Enter') {
+                            const input = document.getElementById('admin-add-research-input') as HTMLInputElement;
+                            const pathSelect = document.getElementById('admin-add-research-path') as HTMLSelectElement;
+                            const topic = input?.value?.trim();
+                            const pathId = pathSelect?.value;
+                            if (!topic || !pathId) return;
+                            await supabase.from('research_tasks').insert([{ user_id: student.id, path_id: pathId, topic, content_text: '', status: 'pending' }]);
+                            input.value = '';
+                            loadAll();
+                          }
+                        }}
+                      />
+                      <button onClick={async () => {
+                        const input = document.getElementById('admin-add-research-input') as HTMLInputElement;
+                        const pathSelect = document.getElementById('admin-add-research-path') as HTMLSelectElement;
+                        const topic = input?.value?.trim();
+                        const pathId = pathSelect?.value;
+                        if (!topic || !pathId) { alert('주제를 입력하고 Path를 선택해주세요.'); return; }
+                        await supabase.from('research_tasks').insert([{ user_id: student.id, path_id: pathId, topic, content_text: '', status: 'pending' }]);
+                        input.value = '';
+                        loadAll();
+                      }}
+                        style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#0f172a', color: '#ffffff', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+                        <Plus size={13} /> 추가
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {researchTasks.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '48px', color: '#94a3b8', fontSize: '14px' }}>탐구 과제가 없어요</div>
+              ) : (
+                researchTasks.map(r => (
+                  <div key={r.id}
+                    style={{ padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0', transition: 'all 0.15s' }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = '#7c3aed'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = '#e2e8f0'}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        {r.path_title && (
+                          <span style={{ fontSize: '11px', color: '#7c3aed', backgroundColor: '#f5f3ff', padding: '2px 8px', borderRadius: '5px', fontWeight: '600', marginBottom: '6px', display: 'inline-block' }}>{r.path_title}</span>
+                        )}
+                        <p style={{ margin: '0 0 6px 0', fontSize: '14px', fontWeight: '700', color: '#0f172a', lineHeight: 1.5 }}>{r.topic}</p>
+                        <p style={{ margin: 0, fontSize: '13px', color: '#64748b', lineHeight: 1.5,
+                          overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>
+                          {r.content_text || '(내용 미작성)'}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '6px', fontWeight: '700',
+                          backgroundColor: r.status === 'completed' ? '#dcfce7' : r.status === 'submitted' ? '#fef3c7' : '#f1f5f9',
+                          color: r.status === 'completed' ? '#16a34a' : r.status === 'submitted' ? '#d97706' : '#94a3b8' }}>
+                          {r.status === 'completed' ? '완료' : r.status === 'submitted' ? '대기' : '작성중'}
+                        </span>
+                        <button onClick={() => {
+                          setSelectedResearch(r);
+                          setResearchDraft({ topic: r.topic, content_text: r.content_text, feedback_content: r.feedback_content || '', revised_content: r.revised_content || '' });
+                          setEditingResearch(true);
+                        }}
+                          style={{ padding: '5px 12px', borderRadius: '7px', border: 'none', backgroundColor: '#0f172a', color: '#ffffff', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Pencil size={11} /> 편집
+                        </button>
+                        <button onClick={async () => {
+                          if (!confirm(`이 과제를 삭제할까요?\n"${r.topic.substring(0, 50)}..."`)) return;
+                          await supabase.from('research_tasks').delete().eq('id', r.id);
+                          setResearchTasks(prev => prev.filter(t => t.id !== r.id));
+                        }}
+                          style={{ padding: '5px 8px', borderRadius: '7px', border: 'none', backgroundColor: '#fee2e2', color: '#dc2626', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <X size={13} />
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>{formatDate(r.created_at)}</span>
+                      <span style={{ fontSize: '11px', color: (r.content_text || '').length >= 1000 ? '#16a34a' : '#94a3b8', fontWeight: '600' }}>
+                        {(r.content_text || '').length.toLocaleString()}자
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           )
 
         ) : (
@@ -934,29 +1178,93 @@ export default function AdminPage({ session }: AdminPageProps) {
 
   const handleConfirmPayment = async (order: PaymentOrderAdmin) => {
     if (!confirm(`"${order.userName || order.userEmail}"의 ${order.total_amount.toLocaleString()}원 입금을 확인하시겠습니까?`)) return;
-    // figure out what tokens to add based on order items
-    let addAi = 0, addHuman = 0;
+    
     const items = order.items;
-    if (items.includes('특별 패키지')) { addAi += 200; addHuman += 30; }
-    if (items.includes('AI 토큰 100개')) { addAi += 100; }
-    if (items.includes('컨설턴트 토큰 10개')) { addHuman += 10; }
+    
+    // 회원권 주문인지 확인
+    const isMembership = items.includes('회원권');
+    
+    if (isMembership) {
+      // 회원권 기간 파싱
+      let months = 1;
+      let planType = '1month';
+      if (items.includes('6개월')) { months = 6; planType = '6month'; }
+      else if (items.includes('3개월')) { months = 3; planType = '3month'; }
+      else { months = 1; planType = '1month'; }
 
-    // update order status
-    const { error } = await supabase.from('payment_orders').update({ status: 'confirmed' }).eq('id', order.id);
-    if (error) { alert('업데이트 실패: ' + error.message); return; }
+      // 주문 상태 업데이트
+      const { error } = await supabase.from('payment_orders').update({ status: 'confirmed' }).eq('id', order.id);
+      if (error) { alert('업데이트 실패: ' + error.message); return; }
 
-    // add tokens to user profile
-    if (addAi > 0 || addHuman > 0) {
-      const { data: profile } = await supabase.from('profiles').select('ai_tokens, human_tokens').eq('id', order.user_id).single();
-      if (profile) {
-        await supabase.from('profiles').update({
-          ai_tokens: (profile.ai_tokens || 0) + addAi,
-          human_tokens: (profile.human_tokens || 0) + addHuman,
-        }).eq('id', order.user_id);
+      // 기존 활성 회원권 확인 (연장 로직)
+      const { data: existingMembership } = await supabase
+        .from('memberships')
+        .select('*')
+        .eq('user_id', order.user_id)
+        .eq('status', 'active')
+        .order('end_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const now = new Date();
+      let startDate: Date;
+      
+      if (existingMembership) {
+        // 기존 회원권이 아직 유효하면 그 끝나는 날짜부터 연장
+        const existingEnd = new Date(existingMembership.end_date);
+        startDate = existingEnd > now ? existingEnd : now;
+      } else {
+        startDate = now;
       }
-    }
 
-    alert('✅ 입금 확인 완료! 토큰이 지급되었습니다.');
+      const endDate = new Date(startDate);
+      endDate.setMonth(endDate.getMonth() + months);
+
+      // 새 회원권 생성
+      await supabase.from('memberships').insert({
+        user_id: order.user_id,
+        plan_type: planType,
+        start_date: now.toISOString(),
+        end_date: endDate.toISOString(),
+        token_reset_date: now.toISOString(),
+        status: 'active',
+      });
+
+      // 만약 기존 만료 회원권이 있으면 expired 처리
+      if (existingMembership && new Date(existingMembership.end_date) <= now) {
+        await supabase.from('memberships').update({ status: 'expired' }).eq('id', existingMembership.id);
+      }
+
+      // 토큰 리셋 (매월 AI 100 + 컨설턴트 30)
+      await supabase.from('profiles').update({
+        ai_tokens: 100,
+        human_tokens: 30,
+        membership_end_date: endDate.toISOString(),
+        membership_plan: planType,
+      }).eq('id', order.user_id);
+
+      alert(`✅ 회원권 활성화 완료!\n기간: ${months}개월 (${endDate.toLocaleDateString('ko-KR')}까지)\nAI 토큰 100개 + 컨설턴트 토큰 30개 충전됨`);
+    } else {
+      // 레거시 토큰 개별 구매 (하위호환)
+      let addAi = 0, addHuman = 0;
+      if (items.includes('특별 패키지')) { addAi += 200; addHuman += 30; }
+      if (items.includes('AI 토큰 100개')) { addAi += 100; }
+      if (items.includes('컨설턴트 토큰 10개')) { addHuman += 10; }
+
+      const { error } = await supabase.from('payment_orders').update({ status: 'confirmed' }).eq('id', order.id);
+      if (error) { alert('업데이트 실패: ' + error.message); return; }
+
+      if (addAi > 0 || addHuman > 0) {
+        const { data: profile } = await supabase.from('profiles').select('ai_tokens, human_tokens').eq('id', order.user_id).single();
+        if (profile) {
+          await supabase.from('profiles').update({
+            ai_tokens: (profile.ai_tokens || 0) + addAi,
+            human_tokens: (profile.human_tokens || 0) + addHuman,
+          }).eq('id', order.user_id);
+        }
+      }
+      alert('✅ 입금 확인 완료! 토큰이 지급되었습니다.');
+    }
     fetchPayments();
   };
 

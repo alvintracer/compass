@@ -5,7 +5,7 @@ import { supabase } from '../supabaseClient';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import {
   Sparkles, Plus, ChevronDown, ChevronUp, Save,
-  UserCheck, Loader2, BookOpen, Target,
+  UserCheck, Loader2, BookOpen, Target, Trash2, PenLine, X,
 } from 'lucide-react';
 
 interface ResearchTasksProps { session: Session }
@@ -35,7 +35,14 @@ export default function ResearchTasks({ session }: ResearchTasksProps) {
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [isPathLoading, setIsPathLoading] = useState(true);
 
-  // 초기 데이터 로드 — InterviewQnA와 동일한 구조
+  // 직접 과제 추가
+  const [showManualAdd, setShowManualAdd] = useState(false);
+  const [manualTopic, setManualTopic] = useState('');
+
+  // Path 삭제 확인
+  const [deletingPathId, setDeletingPathId] = useState<string | null>(null);
+
+  // 초기 데이터 로드
   useEffect(() => {
     const fetchInitialData = async () => {
       const { data: idDoc } = await supabase
@@ -126,6 +133,50 @@ export default function ResearchTasks({ session }: ResearchTasksProps) {
       alert(err.message);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  // 직접 과제 추가
+  const handleAddManualTopic = async () => {
+    if (!manualTopic.trim() || !activePathId) return;
+    try {
+      const { data: inserted, error } = await supabase.from('research_tasks').insert([{
+        user_id: session.user.id,
+        path_id: activePathId,
+        topic: manualTopic.trim(),
+        content_text: '',
+        status: 'pending',
+      }]).select().single();
+      if (error) throw new Error(error.message);
+      if (inserted) {
+        setTasks(prev => [...prev, inserted as Research]);
+        setManualTopic('');
+        setShowManualAdd(false);
+        setExpandedId(inserted.id);
+      }
+    } catch (err: any) {
+      alert('과제 추가 중 오류: ' + err.message);
+    }
+  };
+
+  // 개별 과제 삭제
+  const handleDeleteTask = async (id: string) => {
+    if (!confirm('이 탐구 과제를 삭제할까요?')) return;
+    await supabase.from('research_tasks').delete().eq('id', id);
+    setTasks(prev => prev.filter(t => t.id !== id));
+  };
+
+  // Path 과제 통째로 삭제
+  const handleDeletePath = async (pathId: string) => {
+    try {
+      await supabase.from('research_tasks').delete().eq('path_id', pathId);
+      // Path 자체는 career_paths에서 삭제 (interview_qnas도 같이 삭제됨)
+      // 여기서는 research_tasks만 삭제하고 path는 유지
+      setDeletingPathId(null);
+      setTasks([]);
+      alert('해당 Path의 모든 탐구 과제가 삭제되었습니다.');
+    } catch (err: any) {
+      alert('삭제 중 오류: ' + err.message);
     }
   };
 
@@ -235,6 +286,8 @@ export default function ResearchTasks({ session }: ResearchTasksProps) {
     );
   }
 
+
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
@@ -256,21 +309,58 @@ export default function ResearchTasks({ session }: ResearchTasksProps) {
         </div>
 
         {/* Path 탭 */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto' }}>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', alignItems: 'center' }}>
           {paths.map(p => (
-            <button key={p.id} onClick={() => setActivePathId(p.id)}
-              style={{
-                padding: '9px 18px', borderRadius: '10px',
-                border: `2px solid ${activePathId === p.id ? '#7c3aed' : '#e2e8f0'}`,
-                backgroundColor: activePathId === p.id ? '#f5f3ff' : '#ffffff',
-                color: activePathId === p.id ? '#7c3aed' : '#64748b',
-                fontSize: '13px', fontWeight: '700', cursor: 'pointer',
-                whiteSpace: 'nowrap', transition: 'all 0.2s',
-              }}>
-              {p.title}
-            </button>
+            <div key={p.id} style={{ position: 'relative', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+              <button onClick={() => setActivePathId(p.id)}
+                style={{
+                  padding: '9px 18px', borderRadius: '10px',
+                  border: `2px solid ${activePathId === p.id ? '#7c3aed' : '#e2e8f0'}`,
+                  backgroundColor: activePathId === p.id ? '#f5f3ff' : '#ffffff',
+                  color: activePathId === p.id ? '#7c3aed' : '#64748b',
+                  fontSize: '13px', fontWeight: '700', cursor: 'pointer',
+                  whiteSpace: 'nowrap', transition: 'all 0.2s',
+                  paddingRight: activePathId === p.id ? '12px' : '18px',
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                }}>
+                {p.title}
+                {activePathId === p.id && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDeletingPathId(p.id); }}
+                    style={{ background: 'rgba(124,58,237,0.1)', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+                  >
+                    <Trash2 size={11} color="#7c3aed" />
+                  </button>
+                )}
+              </button>
+            </div>
           ))}
         </div>
+
+        {/* Path 삭제 확인 */}
+        {deletingPathId && (
+          <div style={{ marginBottom: '16px', padding: '16px 20px', backgroundColor: '#fef2f2', borderRadius: '14px', border: '1px solid #fecaca' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <Trash2 size={18} color="#dc2626" />
+              <div>
+                <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#991b1b' }}>
+                  "{paths.find(p => p.id === deletingPathId)?.title}" Path의 탐구 과제를 모두 삭제할까요?
+                </h4>
+                <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#b91c1c' }}>
+                  이 Path에 포함된 모든 탐구 과제가 영구 삭제됩니다.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setDeletingPathId(null)} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #d1d5db', backgroundColor: '#ffffff', color: '#6b7280', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
+                취소
+              </button>
+              <button onClick={() => handleDeletePath(deletingPathId)} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', backgroundColor: '#dc2626', color: '#ffffff', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
+                삭제하기
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 과제가 없을 때 */}
         {tasks.length === 0 ? (
@@ -282,14 +372,22 @@ export default function ResearchTasks({ session }: ResearchTasksProps) {
             <p style={{ margin: '0 0 24px 0', fontSize: '13px', color: '#94a3b8' }}>
               AI가 진로와 관련된 탐구 주제를 생성해 드려요
             </p>
-            <button
-              onClick={handleGenerateTopics}
-              disabled={isGenerating || !identityData}
-              style={{ padding: '14px 28px', backgroundColor: '#7c3aed', color: '#ffffff', border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: (isGenerating || !identityData) ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.2)', opacity: (isGenerating || !identityData) ? 0.7 : 1 }}
-            >
-              {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-              {isGenerating ? 'AI가 과제를 생성 중입니다...' : '탐구 과제 생성하기'}
-            </button>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleGenerateTopics}
+                disabled={isGenerating || !identityData}
+                style={{ padding: '14px 28px', backgroundColor: '#7c3aed', color: '#ffffff', border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: (isGenerating || !identityData) ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.2)', opacity: (isGenerating || !identityData) ? 0.7 : 1 }}
+              >
+                {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+                {isGenerating ? 'AI가 과제를 생성 중입니다...' : '탐구 과제 생성하기'}
+              </button>
+              <button
+                onClick={() => setShowManualAdd(true)}
+                style={{ padding: '14px 28px', backgroundColor: '#ffffff', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px' }}
+              >
+                <PenLine size={18} /> 직접 과제 추가
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -344,13 +442,20 @@ export default function ResearchTasks({ session }: ResearchTasksProps) {
                           </span>
                         </div>
                       </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteTask(t.id); }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '6px', opacity: 0.4, transition: 'opacity 0.15s', flexShrink: 0 }}
+                        onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                        onMouseLeave={e => e.currentTarget.style.opacity = '0.4'}
+                      >
+                        <Trash2 size={15} color="#ef4444" />
+                      </button>
                       {isExpanded ? <ChevronUp size={18} color="#94a3b8" /> : <ChevronDown size={18} color="#94a3b8" />}
                     </div>
 
                     {/* 펼침 영역 */}
                     {isExpanded && (
                       <div style={{ padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        {/* 내용 작성 */}
                         <div>
                           <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', fontWeight: '700', color: '#475569' }}>
                             조사 내용 (최소 1,000자)
@@ -412,22 +517,74 @@ export default function ResearchTasks({ session }: ResearchTasksProps) {
               })}
             </div>
 
-            {/* 추가 생성 버튼 */}
-            <button
-              onClick={handleGenerateTopics}
-              disabled={isGenerating}
-              style={{
-                marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                width: '100%', padding: '14px', borderRadius: '12px',
-                border: '2px dashed #d8b4fe', backgroundColor: '#faf5ff',
-                color: '#7c3aed', fontSize: '14px', fontWeight: '700',
-                cursor: isGenerating ? 'not-allowed' : 'pointer', opacity: isGenerating ? 0.6 : 1,
-              }}
-            >
-              {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-              {isGenerating ? '과제 생성 중...' : `과제 3개 더 추가하기 · 현재 ${tasks.length}개`}
-            </button>
+            {/* 하단 액션 버튼들 */}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '16px', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleGenerateTopics}
+                disabled={isGenerating}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  padding: '14px 24px', borderRadius: '12px',
+                  border: '2px dashed #d8b4fe', backgroundColor: '#faf5ff',
+                  color: '#7c3aed', fontSize: '14px', fontWeight: '700',
+                  cursor: isGenerating ? 'not-allowed' : 'pointer', opacity: isGenerating ? 0.6 : 1,
+                }}
+              >
+                {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                {isGenerating ? '과제 생성 중...' : `과제 3개 더 추가하기 · 현재 ${tasks.length}개`}
+              </button>
+
+              <button
+                onClick={() => setShowManualAdd(!showManualAdd)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  padding: '14px 24px', borderRadius: '12px',
+                  border: '2px dashed #cbd5e1', backgroundColor: '#ffffff',
+                  color: '#475569', fontSize: '14px', fontWeight: '700',
+                  cursor: 'pointer',
+                }}
+              >
+                <PenLine size={16} /> 직접 과제 추가
+              </button>
+            </div>
           </>
+        )}
+
+        {/* 직접 과제 추가 입력창 */}
+        {showManualAdd && (
+          <div style={{ marginTop: '16px', padding: '20px', backgroundColor: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <label style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <PenLine size={16} color="#7c3aed" /> 직접 탐구 주제 입력
+              </label>
+              <button onClick={() => { setShowManualAdd(false); setManualTopic(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                <X size={18} color="#94a3b8" />
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px' }}>
+              <input
+                value={manualTopic}
+                onChange={e => setManualTopic(e.target.value)}
+                placeholder="탐구하고 싶은 주제를 입력하세요."
+                onKeyDown={e => { if (e.key === 'Enter') handleAddManualTopic(); }}
+                style={{ flex: 1, padding: '12px 16px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '15px', outline: 'none', fontFamily: 'inherit' }}
+              />
+              <button
+                onClick={handleAddManualTopic}
+                disabled={!manualTopic.trim()}
+                style={{
+                  padding: '12px 24px', borderRadius: '10px', border: 'none',
+                  backgroundColor: manualTopic.trim() ? '#7c3aed' : '#e2e8f0',
+                  color: manualTopic.trim() ? '#ffffff' : '#94a3b8',
+                  fontSize: '14px', fontWeight: '700', cursor: manualTopic.trim() ? 'pointer' : 'not-allowed',
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  ...(isMobile ? { width: '100%', justifyContent: 'center' } : {}),
+                }}
+              >
+                <Plus size={16} /> 추가
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

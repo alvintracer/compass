@@ -94,8 +94,25 @@ const getActivePrompt = async (
 };
 
 // ── 기본 프롬프트 (fallback) ───────────────────────────────────────────────
+// 진로/학과 관련 맞춤형 질문
 const FALLBACK_QUESTIONS =
   `당신은 대한민국 최고의 대학 입시 면접관입니다. 학생의 '정의서' 내용과 희망하는 '진로 Path'를 바탕으로, 실제 면접에서 나올 법한 날카롭고 본질적인 맞춤형 면접 질문 3개를 생성해 주세요. 반드시 기존에 이미 생성된 질문들과 다른 새로운 각도의 질문을 만들어야 합니다. 반드시 다른 말은 빼고 질문 3개를 JSON 배열(Array of strings) 형태로만 출력하세요. 예: ["질문1", "질문2", "질문3"]`;
+
+// 기본 질문 (진로/학과와 무관한 대학 입학면접 공통 질문)
+const FALLBACK_BASIC_QUESTIONS =
+  `당신은 대한민국 최고의 대학 입시 면접관입니다. 진로나 학과와 상관없이 대학 입학 면접에서 공통으로 나올 수 있는 기본적인 인성/인품 관련 면접 질문 3개를 생성해 주세요.
+
+다음과 같은 주제에서 질문을 만드세요:
+- 자기소개, 성격의 장단점
+- 존경하는 인물과 그 이유
+- 타인을 위한 희생/봉사 경험과 느낀점
+- 살면서 가장 힘들었던 일과 극복 방법
+- 갈등 해결 경험, 팀워크 경험
+- 가치관과 삶의 신념
+- 미래 목표와 계획
+- 실패 경험과 배운 점
+
+반드시 기존에 이미 생성된 질문들과 다른 새로운 각도의 질문을 만들어야 합니다. 반드시 다른 말은 빼고 질문 3개를 JSON 배열(Array of strings) 형태로만 출력하세요. 예: ["질문1", "질문2", "질문3"]`;
 
 const FALLBACK_EVALUATE =
   `당신은 날카로우면서도 따뜻한 입시 컨설턴트입니다. 면접 질문에 대한 학생의 답변을 읽고 아래 형식으로 반드시 출력하세요.
@@ -155,6 +172,7 @@ serve(async (req) => {
 
     // ── 질문 생성 ───────────────────────────────────────────────────────────
     if (action === "generate_questions") {
+      const isBasicPath = pathName === "기본 질문";
       const hasExisting = existingQuestions && existingQuestions.length > 0;
       const existingBlock = hasExisting
         ? `\n\n[이미 생성된 질문 목록 - 아래 질문들과 유사하거나 중복되는 질문은 절대 생성하지 마세요]\n${
@@ -164,10 +182,13 @@ serve(async (req) => {
         : "";
 
       // DB에서 활성 프롬프트 로드
+      const fallback = isBasicPath
+        ? FALLBACK_BASIC_QUESTIONS
+        : FALLBACK_QUESTIONS;
       let basePrompt = await getActivePrompt(
         supabase,
-        "interview_questions",
-        FALLBACK_QUESTIONS,
+        isBasicPath ? "interview_basic_questions" : "interview_questions",
+        fallback,
       );
 
       // 기존 질문 중복 방지 블록은 항상 동적으로 추가
@@ -176,8 +197,10 @@ serve(async (req) => {
           ? " 반드시 기존에 이미 생성된 질문들과 다른 새로운 각도의 질문을 만들어야 합니다."
           : ""
       );
-      const userMessage =
-        `[진로 Path]: ${pathName}\n\n[학생 정의서]\n${identityContent}${existingBlock}`;
+
+      const userMessage = isBasicPath
+        ? `[학생 정보]\n${identityContent || "학생 정보 없음"}${existingBlock}`
+        : `[진로 Path]: ${pathName}\n\n[학생 정의서]\n${identityContent}${existingBlock}`;
 
       const data = await callOpenAI(OPENAI_API_KEY, {
         model: "gpt-4.1-mini",

@@ -35,23 +35,40 @@ export default function Auth() {
     }}>
 
       {/* 서비스 소개 배너 */}
-      <a
-        href="/Landing.html"
-        style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          marginBottom: '24px', padding: '10px 20px',
-          backgroundColor: '#eff6ff', border: '1px solid #bfdbfe',
-          borderRadius: '100px', textDecoration: 'none',
-          fontSize: '13px', fontWeight: '600', color: '#2563eb',
-          transition: 'all 0.2s',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#dbeafe'; e.currentTarget.style.borderColor = '#93c5fd'; }}
-        onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#eff6ff'; e.currentTarget.style.borderColor = '#bfdbfe'; }}
-      >
-        <span style={{ fontSize: '15px' }}>🧭</span>
-        Compass가 처음이신가요? 서비스 소개 보기
-        <span style={{ fontSize: '15px' }}>→</span>
-      </a>
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap', justifyContent: 'center' }}>
+        <a
+          href="/Landing.html"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            padding: '10px 20px',
+            backgroundColor: '#eff6ff', border: '1px solid #bfdbfe',
+            borderRadius: '100px', textDecoration: 'none',
+            fontSize: '13px', fontWeight: '600', color: '#2563eb',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#dbeafe'; e.currentTarget.style.borderColor = '#93c5fd'; }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#eff6ff'; e.currentTarget.style.borderColor = '#bfdbfe'; }}
+        >
+          <span style={{ fontSize: '15px' }}>🧭</span>
+          서비스 소개 보기
+        </a>
+        <a
+          href="/Tutorial.html"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            padding: '10px 20px',
+            backgroundColor: '#f8fafc', border: '1px solid #e2e8f0',
+            borderRadius: '100px', textDecoration: 'none',
+            fontSize: '13px', fontWeight: '600', color: '#64748b',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f1f5f9'; e.currentTarget.style.color = '#0f172a'; }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#f8fafc'; e.currentTarget.style.color = '#64748b'; }}
+        >
+          <span style={{ fontSize: '15px' }}>📖</span>
+          사용자 가이드 보기
+        </a>
+      </div>
 
       {/* 로그인 카드 */}
       <div style={{
@@ -140,10 +157,13 @@ export default function Auth() {
       </div>
 
       {/* 하단 서비스 소개 링크 (모바일용 추가) */}
-      <p style={{ marginTop: '20px', fontSize: '13px', color: '#94a3b8', textAlign: 'center' }}>
-        Compass가 무엇인지 궁금하다면?{' '}
+      <p style={{ marginTop: '20px', fontSize: '13px', color: '#94a3b8', textAlign: 'center', display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+        <span>Compass가 무엇인지 궁금하다면?</span>
         <a href="/Landing.html" style={{ color: '#2563eb', fontWeight: '600', textDecoration: 'none' }}>
           서비스 소개 →
+        </a>
+        <a href="/Tutorial.html" style={{ color: '#64748b', fontWeight: '600', textDecoration: 'none' }}>
+          사용자 가이드 →
         </a>
       </p>
     </div>
