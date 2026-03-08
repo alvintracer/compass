@@ -19,7 +19,7 @@ const sendEmail = async (to: string, subject: string, html: string) => {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: "Compass <noreply@yourdomain.com>", // 🌟 도메인 설정 후 변경
+      from: "Compass <noreply@compass-edu.netlify.app>", // 🌟 도메인 설정 후 변경
       to: [to],
       subject,
       html,
@@ -33,7 +33,10 @@ const sendEmail = async (to: string, subject: string, html: string) => {
 };
 
 // 이메일 템플릿
-const makeEmailHtml = (type: "record" | "interview", previewText: string) => `
+const makeEmailHtml = (
+  type: "record" | "interview" | "message",
+  previewText: string,
+) => `
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -60,24 +63,33 @@ const makeEmailHtml = (type: "record" | "interview", previewText: string) => `
             </td>
           </tr>
 
-          <!-- 본문 -->
-          <tr>
-            <td style="padding:36px;">
               <p style="margin:0 0 8px 0;font-size:22px;font-weight:800;color:#0f172a;">
                 ${
   type === "record"
     ? "📝 생기부 첨삭이 완료됐어요!"
-    : "🎙️ 면접 Q&A 첨삭이 완료됐어요!"
+    : type === "interview"
+    ? "🎙️ 면접 Q&A 첨삭이 완료됐어요!"
+    : "💬 컴파스 컨설턴트의 새 메세지가 도착했어요!"
 }
               </p>
               <p style="margin:0 0 28px 0;font-size:15px;color:#64748b;line-height:1.6;">
-                한태우 컨설턴트가 첨삭을 마쳤어요. 지금 바로 확인해보세요.
+                ${
+  type === "message"
+    ? "한태우 컨설턴트가 메세지를 보냈어요. 지금 바로 확인해보세요."
+    : "한태우 컨설턴트가 첨삭을 마쳤어요. 지금 바로 확인해보세요."
+}
               </p>
 
               <!-- 미리보기 -->
               <div style="background:#f8fafc;border-radius:12px;padding:20px;border:1px solid #e2e8f0;margin-bottom:28px;">
                 <p style="margin:0 0 8px 0;font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;">
-                  ${type === "record" ? "요청 내용" : "면접 질문"}
+                  ${
+  type === "record"
+    ? "요청 내용"
+    : type === "interview"
+    ? "면접 질문"
+    : "메세지 내용"
+}
                 </p>
                 <p style="margin:0;font-size:14px;color:#334155;line-height:1.6;">
                   ${previewText}
@@ -139,17 +151,19 @@ serve(async (req) => {
 
       if (!record) throw new Error("요청을 찾을 수 없습니다.");
 
-      // 유저 이메일 조회 (auth.users → service role만 접근 가능)
-      const { data: { user } } = await supabase.auth.admin.getUserById(
-        record.user_id,
-      );
-      if (!user?.email) throw new Error("유저 이메일을 찾을 수 없습니다.");
+      // 유저 이메일 조회 (profiles 테이블)
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("email")
+        .eq("id", record.user_id)
+        .single();
+      if (!profile?.email) throw new Error("유저 이메일을 찾을 수 없습니다.");
 
       const preview = (record.request_text || "").substring(0, 120) +
         ((record.request_text || "").length > 120 ? "..." : "");
 
       await sendEmail(
-        user.email,
+        profile.email,
         `[Compass] ${record.category} 첨삭이 완료됐어요!`,
         makeEmailHtml("record", preview),
       );
@@ -170,18 +184,50 @@ serve(async (req) => {
 
       if (!qna) throw new Error("요청을 찾을 수 없습니다.");
 
-      const { data: { user } } = await supabase.auth.admin.getUserById(
-        qna.user_id,
-      );
-      if (!user?.email) throw new Error("유저 이메일을 찾을 수 없습니다.");
+      // 유저 이메일 조회 (profiles 테이블)
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("email")
+        .eq("id", qna.user_id)
+        .single();
+      if (!profile?.email) throw new Error("유저 이메일을 찾을 수 없습니다.");
 
       const preview = (qna.question || "").substring(0, 120) +
         ((qna.question || "").length > 120 ? "..." : "");
 
       await sendEmail(
-        user.email,
+        profile.email,
         "[Compass] 면접 Q&A 첨삭이 완료됐어요!",
         makeEmailHtml("interview", preview),
+      );
+
+      return new Response(
+        JSON.stringify({ result: "sent" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ── 메세지 알림 ─────────────────────────────────────────
+    if (action === "new_message") {
+      const { user_id, message } = await req.json();
+
+      if (!user_id || !message) throw new Error("필수 정보가 누락되었습니다.");
+
+      // 유저 이메일 조회 (profiles 테이블)
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("email")
+        .eq("id", user_id)
+        .single();
+      if (!profile?.email) throw new Error("유저 이메일을 찾을 수 없습니다.");
+
+      const preview = message.substring(0, 120) +
+        (message.length > 120 ? "..." : "");
+
+      await sendEmail(
+        profile.email,
+        "[Compass] 컨설턴트의 새 메세지가 도착했어요!",
+        makeEmailHtml("message", preview),
       );
 
       return new Response(

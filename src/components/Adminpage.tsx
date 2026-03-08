@@ -293,13 +293,21 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
   const sendMessage = async () => {
     if (!msgInput.trim()) return;
     setMsgSending(true);
-    await supabase.from('messages').insert({
+    const { error: insertError } = await supabase.from('messages').insert({
       user_id:       student.id,
       sender:        'consultant',
       receiver_role: msgRole,
       content:       msgInput.trim(),
       is_read:       false,
     });
+    
+    // 이메일 알림 전송 (에러 발생해도 메시지 저장/전송 자체는 계속 진행)
+    if (!insertError) {
+      await supabase.functions.invoke('send-notification', {
+        body: { action: 'new_message', user_id: student.id, message: msgInput.trim() },
+      });
+    }
+
     setMsgInput('');
     await loadMessages(msgRole);
     setMsgSending(false);
