@@ -17,7 +17,7 @@ import ResearchTasks from './ResearchTasks'
 import {
   Compass, Home, Mic, FileEdit, BarChart2, MonitorPlay,
   Bot, User, LogOut, Loader2, FolderOpen, MessageSquare, Menu, X, CreditCard,
-  Target, BookOpen, Crown, AlertTriangle,
+  Target, BookOpen, Crown, AlertTriangle, Calendar,
 } from 'lucide-react'
 
 interface DashboardProps { session: Session }
@@ -59,6 +59,7 @@ interface SidebarProps {
   aiTokens: number
   humanTokens: number
   membership: MembershipInfo
+  userId: string
   onTabClick: (id: string) => void
   onClose?: () => void
   onLogout: () => void
@@ -66,7 +67,7 @@ interface SidebarProps {
 
 function SidebarContent({
   isMobile, isTablet, isOnboarded, activeTab,
-  aiTokens, humanTokens, membership, onTabClick, onClose, onLogout,
+  aiTokens, humanTokens, membership, userId, onTabClick, onClose, onLogout,
 }: SidebarProps) {
   const compact = isTablet && !isMobile
 
@@ -184,6 +185,43 @@ function SidebarContent({
         >
           <CreditCard size={15} /> 회원권 구매
         </button>
+        
+        {/* 대면 상담 요청 링크 */}
+        <button
+          onClick={async () => {
+            if (!window.confirm('대면 상담(70분, 150,000원)을 요청하시겠습니까? \n(어드민으로 알림이 전송됩니다)')) return;
+            try {
+              // payment_orders에 접수
+              const { error } = await supabase.from('payment_orders').insert({
+                user_id: userId,
+                items: '대면 상담 (70분)',
+                total_amount: 150000,
+                status: 'pending',
+              });
+              if (error) throw error;
+              // 텔레그램 푸시
+              await supabase.functions.invoke('send-notification', {
+                body: { action: 'admin_telegram', message: `🔔 <b>새 대면상담 요청 접수</b>\n\n결제 관리 탭에서 확인하세요.` }
+              });
+              alert('대면 상담 요청이 접수되었습니다! \n컨설턴트가 확인 후 연락드립니다.');
+            } catch (err: any) {
+              alert('상담 요청 중 오류가 발생했습니다: ' + err.message);
+            }
+          }}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+            width: '100%', padding: compact ? '10px' : '12px', marginBottom: '16px',
+            borderRadius: '10px', border: '1px solid #10b981',
+            background: '#ecfdf5', color: '#047857',
+            fontSize: '13px', fontWeight: '700', cursor: 'pointer',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = '#d1fae5'}
+          onMouseLeave={e => e.currentTarget.style.background = '#ecfdf5'}
+        >
+          <Calendar size={15} /> 대면 상담 요청
+        </button>
+
         <div style={{
           marginBottom: '16px', padding: compact ? '12px' : '16px',
           backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0',
@@ -363,7 +401,7 @@ export default function Dashboard({ session }: DashboardProps) {
 
   const sidebarProps: SidebarProps = {
     isMobile, isTablet, isOnboarded, activeTab,
-    aiTokens, humanTokens, membership,
+    aiTokens, humanTokens, membership, userId: session.user.id,
     onTabClick: handleTabClick,
     onLogout: handleLogout,
   }

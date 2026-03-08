@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 import {
-  ShoppingCart, Copy, Crown,
+  ShoppingCart, Copy, Crown, Calendar,
   ArrowLeft, Loader2, Clock, CheckCircle2, XCircle, Sparkles, Shield,
 } from 'lucide-react';
 
@@ -340,6 +340,65 @@ export default function Payment({ session, onBack }: PaymentProps) {
                   </div>
                 );
               })}
+            </div>
+
+            {/* 대면 상담 정보 */}
+            <h3 style={{ margin: '24px 0 16px 0', fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>
+              단기 컨설팅 예약
+            </h3>
+            <div style={{
+              display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: '16px',
+              padding: '20px', borderRadius: '16px',
+              border: '2px solid #10b981', backgroundColor: '#ecfdf5',
+              position: 'relative',
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '17px', fontWeight: '800', color: '#047857' }}>대면 상담 (1회)</span>
+                </div>
+                <div style={{ fontSize: '13px', color: '#065f46', marginBottom: '2px' }}>70분 심층 컨설팅 · 강남역 인근 오프라인</div>
+                <div style={{ fontSize: '12px', color: '#10b981', marginTop: '6px' }}>150,000원</div>
+              </div>
+              <div style={{ textAlign: isMobile ? 'left' : 'right', width: isMobile ? '100%' : 'auto' }}>
+                <button
+                  onClick={async () => {
+                    if (!window.confirm('대면 상담(70분, 150,000원) 예약을 요청하시겠습니까?\n(어드민으로 알림이 전송되며, 입금이 확인되면 확정됩니다.)')) return;
+                    try {
+                      const { error } = await supabase.from('payment_orders').insert({
+                        user_id: session.user.id,
+                        items: '대면 상담 (70분)',
+                        total_amount: 150000,
+                        status: 'pending',
+                      });
+                      if (error) throw error;
+                      await supabase.functions.invoke('send-notification', {
+                        body: { action: 'admin_telegram', message: `🔔 <b>새 대면상담 요청 접수</b>\n\n결제 관리 탭에서 확인하세요.` }
+                      });
+                      alert('대면 상담 예약 요청이 접수되었습니다!\n입금 확인 후 컨설턴트가 일정 조율을 위해 연락드립니다.');
+                      
+                      // 결제내역 즉시 새로고침
+                      const { data } = await supabase
+                        .from('payment_orders')
+                        .select('*')
+                        .eq('user_id', session.user.id)
+                        .order('created_at', { ascending: false });
+                      if (data) setOrders(data as PaymentOrder[]);
+                    } catch (err: any) {
+                      alert('상담 예약 중 오류가 발생했습니다: ' + err.message);
+                    }
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                    width: isMobile ? '100%' : 'auto', padding: '12px 20px', borderRadius: '10px',
+                    backgroundColor: '#10b981', color: '#ffffff', border: 'none',
+                    fontSize: '14px', fontWeight: '800', cursor: 'pointer', transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#059669'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = '#10b981'}
+                >
+                  <Calendar size={16} /> 예약 요청
+                </button>
+              </div>
             </div>
           </div>
         </div>
