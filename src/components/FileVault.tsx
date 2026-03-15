@@ -4,7 +4,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 import {
   Upload, Loader2, Trash2, Eye, X, Search,
-  ChevronDown, Image as ImageIcon, FileText, BookOpen, Grid3x3, List,
+  ChevronDown, ChevronLeft, ChevronRight, Image as ImageIcon, FileText, BookOpen, Grid3x3, List,
   Crop, Check, ZoomIn, ZoomOut, RotateCcw
 } from 'lucide-react';
 
@@ -373,7 +373,7 @@ export default function FileVault({ session }: FileVaultProps) {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [search, setSearch]       = useState('');
   const [viewMode, setViewMode]   = useState<'grid' | 'list'>('grid');
-  const [previewFile, setPreviewFile] = useState<UserFile | null>(null);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [uploadType, setUploadType] = useState<UserFile['file_type']>('school_record');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -443,12 +443,37 @@ export default function FileVault({ session }: FileVaultProps) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '16px' : '24px' }}>
 
       {/* 미리보기 모달 */}
-      {previewFile && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
-          onClick={() => setPreviewFile(null)}>
-          <div style={{ position: 'relative', width: '100%', maxWidth: '800px', display: 'flex', justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
-            <img src={previewFile.public_url} alt={previewFile.file_name} style={{ maxWidth: '100%', maxHeight: '85vh', borderRadius: '12px', objectFit: 'contain' }} />
-            <button onClick={() => setPreviewFile(null)}
+      {previewIndex !== null && filtered[previewIndex] && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+          onClick={() => setPreviewIndex(null)}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '20px', width: '100%', maxWidth: '900px', height: '100%', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+            
+            <button 
+              onClick={() => setPreviewIndex(prev => Math.max(0, (prev || 0) - 1))}
+              disabled={previewIndex === 0}
+              style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: previewIndex === 0 ? 'not-allowed' : 'pointer', opacity: previewIndex === 0 ? 0.3 : 1, color: '#fff', flexShrink: 0 }}>
+              <ChevronLeft size={24} />
+            </button>
+
+            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: 'transparent', borderRadius: '12px', overflow: 'hidden', height: '100%' }}>
+              {/\.(jpg|jpeg|png|gif|webp)$/i.test(filtered[previewIndex].public_url || filtered[previewIndex].file_name) ? (
+                <img src={filtered[previewIndex].public_url} alt={filtered[previewIndex].file_name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+              ) : (
+                <div style={{ color: '#fff', fontSize: '15px', textAlign: 'center' }}>
+                  지원하지 않는 형식입니다.<br/><br/>
+                  <a href={filtered[previewIndex].public_url} target="_blank" rel="noreferrer" style={{ color: '#60a5fa' }}>직접 열기</a>
+                </div>
+              )}
+            </div>
+
+            <button 
+              onClick={() => setPreviewIndex(prev => Math.min(filtered.length - 1, (prev || 0) + 1))}
+              disabled={previewIndex === filtered.length - 1}
+              style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: previewIndex === filtered.length - 1 ? 'not-allowed' : 'pointer', opacity: previewIndex === filtered.length - 1 ? 0.3 : 1, color: '#fff', flexShrink: 0 }}>
+              <ChevronRight size={24} />
+            </button>
+
+            <button onClick={() => setPreviewIndex(null)}
               style={{ position: 'absolute', top: isMobile ? 'auto' : '-40px', bottom: isMobile ? '-50px' : 'auto', right: isMobile ? 'auto' : 0, background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '8px', padding: '8px 20px', color: '#ffffff', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>닫기</button>
           </div>
         </div>
@@ -543,12 +568,12 @@ export default function FileVault({ session }: FileVaultProps) {
             </div>
           ) : viewMode === 'grid' ? (
             <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? '140px' : '180px'}, 1fr))`, gap: '16px' }}>
-              {filtered.map(f => {
+              {filtered.map((f, idx) => {
                 const meta = FILE_TYPE_META[f.file_type];
                 return (
                   <div key={f.id} style={{ borderRadius: '14px', border: '1px solid #e2e8f0', overflow: 'hidden', transition: 'all 0.15s' }}>
                     <div style={{ position: 'relative', aspectRatio: '3/4', backgroundColor: '#f8fafc', cursor: 'pointer', overflow: 'hidden' }}
-                      onClick={() => setPreviewFile(f)}>
+                      onClick={() => setPreviewIndex(idx)}>
                       <img src={f.public_url} alt={f.file_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       <div style={{ position: 'absolute', top: '8px', left: '8px', padding: '3px 8px', borderRadius: '5px', backgroundColor: meta.bg, color: meta.color, fontSize: '11px', fontWeight: '700' }}>{meta.label}</div>
                     </div>
@@ -557,7 +582,7 @@ export default function FileVault({ session }: FileVaultProps) {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '11px', color: '#94a3b8' }}>{new Date(f.created_at).toLocaleDateString('ko-KR')}</span>
                         <div style={{ display: 'flex', gap: '4px' }}>
-                          <button onClick={() => setPreviewFile(f)}
+                          <button onClick={() => setPreviewIndex(idx)}
                             style={{ width: '28px', height: '28px', borderRadius: '6px', border: 'none', backgroundColor: '#f1f5f9', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <Eye size={14} color="#475569" />
                           </button>
@@ -575,12 +600,12 @@ export default function FileVault({ session }: FileVaultProps) {
           ) : (
             // 리스트 뷰
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {filtered.map(f => {
+              {filtered.map((f, idx) => {
                 const meta = FILE_TYPE_META[f.file_type];
                 return (
                   <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '10px' : '16px', padding: '12px 16px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
                     <img src={f.public_url} alt={f.file_name} style={{ width: '48px', height: '60px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #e2e8f0', cursor: 'pointer', flexShrink: 0 }}
-                      onClick={() => setPreviewFile(f)} />
+                      onClick={() => setPreviewIndex(idx)} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '14px', fontWeight: '600', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.file_name}</div>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>
@@ -589,7 +614,7 @@ export default function FileVault({ session }: FileVaultProps) {
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '6px', flexDirection: isMobile ? 'column' : 'row' }}>
-                      <button onClick={() => setPreviewFile(f)}
+                      <button onClick={() => setPreviewIndex(idx)}
                         style={{ padding: '6px 12px', borderRadius: '8px', border: 'none', backgroundColor: '#f1f5f9', color: '#475569', fontSize: '12px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
                         <Eye size={13} /> {isMobile ? '' : '보기'}
                       </button>

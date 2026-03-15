@@ -112,11 +112,35 @@ serve(async (req) => {
 
     // ── 앱 확인 요청 알림 ─────────────────────────────────────────
     if (action === "app_alert") {
+      const { user_id, alertMessage } = payload;
       if (!user_id) throw new Error("필수 정보가 누락되었습니다.");
+
+      const messageContent = alertMessage ? `\n\n<b>✉️ 메시지:</b>\n<i>${alertMessage}</i>` : '';
 
       const message = `<b>🚨 컴파스 앱 확인 요청</b>
 
-한태우 컨설턴트님이 컴파스 앱 접속을 요청하셨습니다. 앱에서 상세 내용을 확인해보세요!
+한태우 컨설턴트님이 컴파스 앱 접속을 요청하셨습니다. 앱에서 상세 내용을 확인해보세요!${messageContent}
+
+<b>👉 <a href="https://compass-edu.netlify.app">Compass에서 확인하기</a></b>`;
+
+      await sendTelegram(message, "student");
+
+      return new Response(
+        JSON.stringify({ result: "sent" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ── 과제 출제 알림 ─────────────────────────────────────────
+    if (action === "task_assigned") {
+      const { user_id, taskTitle } = payload;
+      if (!user_id || !taskTitle) throw new Error("필수 정보가 누락되었습니다.");
+
+      const message = `<b>📋 새 과제 출제 알림</b>
+
+한태우 컨설턴트님이 새로운 과제를 출제했습니다. 기한 내에 확인하고 진행해주세요!
+
+<b>📌 과제명:</b> <i>${taskTitle}</i>
 
 <b>👉 <a href="https://compass-edu.netlify.app">Compass에서 확인하기</a></b>`;
 

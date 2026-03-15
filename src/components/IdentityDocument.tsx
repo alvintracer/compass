@@ -40,6 +40,7 @@ export default function IdentityDocument({ session, onRegenerate }: IdentityDocu
   const [srUploading, setSrUploading]   = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [vaultFiles, setVaultFiles]     = useState<UserFile[]>([]);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
   // 목표 대학/학과
   const [targetGoals, setTargetGoals]   = useState<{ university: string; major: string }[]>([]);
@@ -431,6 +432,45 @@ export default function IdentityDocument({ session, onRegenerate }: IdentityDocu
         <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
       </div>
 
+      {previewIndex !== null && srImages[previewIndex] && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+          onClick={() => setPreviewIndex(null)}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '20px', width: '100%', maxWidth: '900px', height: '100%', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+            
+            {/* Left Arrow */}
+            <button 
+              onClick={() => setPreviewIndex(prev => Math.max(0, (prev || 0) - 1))}
+              disabled={previewIndex === 0}
+              style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: previewIndex === 0 ? 'not-allowed' : 'pointer', opacity: previewIndex === 0 ? 0.3 : 1, color: '#fff' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            </button>
+
+            {/* Image or Unsupported */}
+            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: 'transparent', borderRadius: '12px', overflow: 'hidden', height: '100%' }}>
+              {/\.(jpg|jpeg|png|gif|webp)$/i.test(srImages[previewIndex].public_url || srImages[previewIndex].file_name) ? (
+                <img src={srImages[previewIndex].public_url} alt={srImages[previewIndex].file_name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+              ) : (
+                <div style={{ color: '#fff', fontSize: '15px', textAlign: 'center' }}>
+                  지원하지 않는 형식입니다.<br/><br/>
+                  <a href={srImages[previewIndex].public_url} target="_blank" rel="noreferrer" style={{ color: '#60a5fa' }}>직접 열기</a>
+                </div>
+              )}
+            </div>
+
+            {/* Right Arrow */}
+            <button 
+              onClick={() => setPreviewIndex(prev => Math.min(srImages.length - 1, (prev || 0) + 1))}
+              disabled={previewIndex === srImages.length - 1}
+              style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: previewIndex === srImages.length - 1 ? 'not-allowed' : 'pointer', opacity: previewIndex === srImages.length - 1 ? 0.3 : 1, color: '#fff' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+
+            <button onClick={() => setPreviewIndex(null)}
+              style={{ position: 'absolute', top: isMobile ? 'auto' : '-40px', bottom: isMobile ? '-50px' : 'auto', right: isMobile ? 'auto' : 0, background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '8px', padding: '8px 20px', color: '#ffffff', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>닫기</button>
+          </div>
+        </div>
+      )}
+
       {/* ── 나의 생활기록부 카드 ── */}
       <div style={{ backgroundColor: '#ffffff', padding: isMobile ? '20px' : '32px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
 
@@ -488,7 +528,7 @@ export default function IdentityDocument({ session, onRegenerate }: IdentityDocu
                 <div style={{ position: 'relative', aspectRatio: '3/4', backgroundColor: '#f8fafc', overflow: 'hidden' }}>
                   <img src={img.public_url} alt={img.file_name}
                     style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
-                    onClick={() => window.open(img.public_url, '_blank')}
+                    onClick={() => setPreviewIndex(idx)}
                   />
                   {/* 페이지 번호 */}
                   <div style={{ position: 'absolute', bottom: '8px', left: '8px', backgroundColor: 'rgba(15,23,42,0.75)', borderRadius: '5px', padding: '2px 8px', fontSize: '12px', fontWeight: '700', color: '#ffffff' }}>

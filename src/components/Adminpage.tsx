@@ -64,14 +64,16 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
 
   const [alertSending, setAlertSending] = useState(false);
   const sendAlert = async () => {
-    if (!window.confirm('학생에게 앱 접속 요청 알림 메일을 전송할까요?')) return;
+    const customMsg = window.prompt('학생에게 앱 접속 요청 알림을 전송할까요?\n(선택) 학생에게 함께 보낼 메시지가 있다면 입력해주세요.');
+    if (customMsg === null) return; // 사용자가 취소를 누른 경우
+    
     setAlertSending(true);
     const { error } = await supabase.functions.invoke('send-notification', {
-      body: { action: 'app_alert', user_id: student.id }
+      body: { action: 'app_alert', user_id: student.id, alertMessage: customMsg }
     });
     setAlertSending(false);
     if (error) alert('알림 발송 실패: ' + error.message);
-    else alert('✅ 학생에게 확인 요청 알림 메일을 발송했습니다.');
+    else alert('✅ 학생에게 확인 요청 알림을 발송했습니다.');
   };
 
   const adjustToken = async (type: 'ai' | 'human', delta: number) => {
@@ -119,7 +121,7 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
 
   // 생활기록부
   const [srImages, setSrImages]   = useState<SchoolRecordImg[]>([]);
-  const [previewImg, setPreviewImg] = useState<string | null>(null);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
   // 메세지
   const [msgRole, setMsgRole]         = useState<'student' | 'parent'>('student');
@@ -242,6 +244,9 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
     });
     if (error) alert('과제 저장 실패: ' + error.message);
     else {
+      supabase.functions.invoke('send-notification', {
+        body: { action: 'task_assigned', user_id: student.id, taskTitle: newTaskTitle.trim() }
+      });
       setNewTaskTitle(''); setNewTaskDesc(''); setNewTaskDue('');
       await loadProgressData();
       alert('✅ 과제가 출제되었습니다!');
@@ -869,12 +874,40 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
 
         ) : tab === 'schoolrecord' ? (
           <>
-            {previewImg && (
-              <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                onClick={() => setPreviewImg(null)}>
-                <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
-                  <img src={previewImg} alt="생기부" style={{ maxWidth: '85vw', maxHeight: '85vh', borderRadius: '12px', objectFit: 'contain' }} />
-                  <button onClick={() => setPreviewImg(null)}
+            {previewIndex !== null && srImages[previewIndex] && (
+              <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+                onClick={() => setPreviewIndex(null)}>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '20px', width: '100%', maxWidth: '900px', height: '100%', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+                  
+                  {/* Left Arrow */}
+                  <button 
+                    onClick={() => setPreviewIndex(prev => Math.max(0, (prev || 0) - 1))}
+                    disabled={previewIndex === 0}
+                    style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: previewIndex === 0 ? 'not-allowed' : 'pointer', opacity: previewIndex === 0 ? 0.3 : 1, color: '#fff' }}>
+                    <ChevronLeft size={24} />
+                  </button>
+
+                  {/* Image or Unsupported */}
+                  <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: 'transparent', borderRadius: '12px', overflow: 'hidden', height: '100%' }}>
+                    {/\.(jpg|jpeg|png|gif|webp)$/i.test(srImages[previewIndex].public_url || srImages[previewIndex].file_name) ? (
+                      <img src={srImages[previewIndex].public_url} alt={srImages[previewIndex].file_name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                    ) : (
+                      <div style={{ color: '#fff', fontSize: '15px', textAlign: 'center' }}>
+                        지원하지 않는 형식입니다.<br/><br/>
+                        <a href={srImages[previewIndex].public_url} target="_blank" rel="noreferrer" style={{ color: '#60a5fa' }}>직접 열기</a>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Arrow */}
+                  <button 
+                    onClick={() => setPreviewIndex(prev => Math.min(srImages.length - 1, (prev || 0) + 1))}
+                    disabled={previewIndex === srImages.length - 1}
+                    style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: previewIndex === srImages.length - 1 ? 'not-allowed' : 'pointer', opacity: previewIndex === srImages.length - 1 ? 0.3 : 1, color: '#fff' }}>
+                    <ChevronRight size={24} />
+                  </button>
+
+                  <button onClick={() => setPreviewIndex(null)}
                     style={{ position: 'absolute', top: '-40px', right: 0, background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '8px', padding: '6px 14px', color: '#ffffff', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>닫기</button>
                 </div>
               </div>
@@ -889,7 +922,7 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
                 <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#64748b', fontWeight: '600' }}>총 {srImages.length}장 · 클릭하면 크게 볼 수 있어요</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px' }}>
                   {srImages.map((img, idx) => (
-                    <div key={img.id} onClick={() => setPreviewImg(img.public_url)}
+                    <div key={img.id} onClick={() => setPreviewIndex(idx)}
                       style={{ borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden', cursor: 'pointer', transition: 'all 0.15s' }}
                       onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.1)'}
                       onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}>
