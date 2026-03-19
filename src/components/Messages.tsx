@@ -5,7 +5,7 @@ import { supabase } from '../supabaseClient';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import {
   MessageCircle, Send, Lock, Eye, EyeOff,
-  Settings, Check, X, Loader2, User, Users,
+  Settings, Check, X, Loader2, User, Users, Pencil, Image as ImageIcon,
 } from 'lucide-react';
 
 interface MessagesProps {
@@ -220,6 +220,8 @@ function MessageView({ role, userId, onLock }: {
   const [isLoading, setIsLoading]   = useState(true);
   const [showChangPin, setShowChangePin] = useState(false);
   const [currentPin, setCurrentPin] = useState('');
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const color  = role === 'student' ? '#2563eb' : '#7c3aed';
@@ -286,6 +288,18 @@ function MessageView({ role, userId, onLock }: {
   const handleSend = async () => {
     if (!input.trim() || sending) return;
     setSending(true);
+
+    if (editingMsgId) {
+      const { error } = await supabase.from('messages').update({ content: input.trim() }).eq('id', editingMsgId);
+      if (!error) {
+        setMessages(prev => prev.map(m => m.id === editingMsgId ? { ...m, content: input.trim() } : m));
+      }
+      setEditingMsgId(null);
+      setInput('');
+      setSending(false);
+      return;
+    }
+
     const { data, error } = await supabase.from('messages').insert({
       user_id:       userId,
       sender:        role,
@@ -303,6 +317,76 @@ function MessageView({ role, userId, onLock }: {
 
     setInput('');
     setSending(false);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSending(true);
+    let f = file;
+    if (f.size > 1024 * 1024) {
+      f = await new Promise<File>((resolve) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (ev) => {
+          const img = new Image();
+          img.src = ev.target?.result as string;
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let { width, height } = img;
+            const max = 1200;
+            if (width > height && width > max) { height *= max / width; width = max; }
+            else if (height > max) { width *= max / height; height = max; }
+            canvas.width = width; canvas.height = height;
+            canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
+            canvas.toBlob(blob => {
+              if (blob) resolve(new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: 'image/jpeg' }));
+              else resolve(file);
+            }, 'image/jpeg', 0.8);
+          }
+        };
+      });
+    }
+
+    const path = `chat-images/${Date.now()}-${f.name}`;
+    const { error: upErr } = await supabase.storage.from('user-files').upload(path, f);
+    if (!upErr) {
+      const { data: urlData } = supabase.storage.from('user-files').getPublicUrl(path);
+      const url = urlData.publicUrl;
+      const { data, error } = await supabase.from('messages').insert({
+        user_id: userId, sender: role, receiver_role: role, content: `![image](${url})`, is_read: false
+      }).select().single();
+      if (!error && data) {
+        setMessages(prev => prev.find(msg => msg.id === data.id) ? prev : [...prev, data as Message]);
+      }
+    } else {
+      alert('이미지 업로드에 실패했습니다.');
+    }
+    setSending(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleReply = (content: string) => {
+    const preview = content.length > 20 ? content.slice(0, 20) + '...' : content;
+    setInput(prev => `ㄴ> ${preview}\n\n${prev}`);
+  };
+
+  const startEdit = (msg: Message) => {
+    setEditingMsgId(msg.id);
+    setInput(msg.content);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('메세지를 삭제하시겠습니까?')) return;
+    await supabase.from('messages').delete().eq('id', id);
+    setMessages(prev => prev.filter(m => m.id !== id));
+  };
+
+  const renderContent = (content: string) => {
+    if (content.startsWith('![image](') && content.endsWith(')')) {
+      return <img src={content.slice(9, -1)} alt="attached" style={{ maxWidth: '100%', borderRadius: '8px', cursor: 'pointer' }} onClick={() => window.open(content.slice(9, -1))} />;
+    }
+    return content;
   };
 
   const formatTime = (d: string) => {
@@ -391,20 +475,31 @@ function MessageView({ role, userId, onLock }: {
                 )}
                 <div style={{ maxWidth: '68%' }}>
                   {!isMe && <p style={{ margin: '0 0 4px 0', fontSize: '11px', color: '#64748b', fontWeight: '600' }}>컨설턴트</p>}
-                  <div style={{
+                  <div
+                    onContextMenu={(e) => { e.preventDefault(); handleReply(msg.content); }}
+                    style={{
                     padding: '10px 14px', borderRadius: isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
                     backgroundColor: isMe ? color : '#ffffff',
                     color: isMe ? '#ffffff' : '#0f172a',
                     fontSize: '14px', lineHeight: 1.6, boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
                     border: isMe ? 'none' : '1px solid #e2e8f0',
-                    wordBreak: 'break-word',
+                    wordBreak: 'break-word', whiteSpace: 'pre-wrap',
+                    cursor: 'context-menu',
                   }}>
-                    {msg.content}
+                    {renderContent(msg.content)}
                   </div>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#94a3b8', textAlign: isMe ? 'right' : 'left' }}>
-                    {formatTime(msg.created_at)}
-                    {isMe && <span style={{ marginLeft: '4px' }}>{msg.is_read ? '읽음' : ''}</span>}
-                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: isMe ? 'flex-end' : 'flex-start', marginTop: '4px', gap: '6px' }}>
+                    <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8', textAlign: isMe ? 'right' : 'left' }}>
+                      {formatTime(msg.created_at)}
+                      {isMe && <span style={{ marginLeft: '4px' }}>{msg.is_read ? '읽음' : ''}</span>}
+                    </p>
+                    {isMe && (
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button onClick={() => startEdit(msg)} style={{ padding: '2px 4px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#94a3b8' }} title="수정"><Pencil size={11} /></button>
+                        <button onClick={() => handleDelete(msg.id)} style={{ padding: '2px 4px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#ef4444' }} title="삭제"><X size={13} /></button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -414,12 +509,17 @@ function MessageView({ role, userId, onLock }: {
       </div>
 
       {/* 입력창 */}
-      <div style={{ padding: '14px 16px', backgroundColor: '#ffffff', borderRadius: '0 0 14px 14px', border: '1px solid #e2e8f0', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+      <div style={{ padding: '14px 16px', backgroundColor: '#ffffff', borderRadius: '0 0 14px 14px', border: '1px solid #e2e8f0', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+        <input type="file" ref={fileInputRef} accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
+        <button onClick={() => fileInputRef.current?.click()} disabled={sending}
+          style={{ width: '40px', height: '40px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', color: '#64748b', cursor: sending ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <ImageIcon size={18} />
+        </button>
         <textarea
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!e.nativeEvent.isComposing) handleSend(); } }}
-          placeholder="메세지를 입력하세요 (Enter로 전송)"
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSend(); } }}
+          placeholder={editingMsgId ? "메세지 수정 (Enter로 저장)" : "메세지를 입력하세요 (Enter로 전송)"}
           rows={1}
           style={{ flex: 1, padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none', resize: 'none', fontFamily: 'inherit', lineHeight: 1.5, maxHeight: '100px', overflowY: 'auto' }}
           onInput={e => {

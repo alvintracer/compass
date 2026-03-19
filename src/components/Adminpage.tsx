@@ -129,6 +129,8 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
   const [msgInput, setMsgInput]       = useState('');
   const [msgSending, setMsgSending]   = useState(false);
   const [msgLoading, setMsgLoading]   = useState(false);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const msgFileInputRef               = React.useRef<HTMLInputElement>(null);
   const bottomMsgRef                  = React.useRef<HTMLDivElement>(null);
 
   // 성취도
@@ -308,8 +310,20 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
   };
 
   const sendMessage = async () => {
-    if (!msgInput.trim()) return;
+    if (!msgInput.trim() || msgSending) return;
     setMsgSending(true);
+
+    if (editingMsgId) {
+      const { error } = await supabase.from('messages').update({ content: msgInput.trim() }).eq('id', editingMsgId);
+      if (!error) {
+        setMessages(prev => prev.map(m => m.id === editingMsgId ? { ...m, content: msgInput.trim() } : m));
+      }
+      setEditingMsgId(null);
+      setMsgInput('');
+      setMsgSending(false);
+      return;
+    }
+
     await supabase.from('messages').insert({
       user_id:       student.id,
       sender:        'consultant',
@@ -322,6 +336,83 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
     setMsgSending(false);
     setTimeout(() => bottomMsgRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
+
+  const handleMsgImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setMsgSending(true);
+    let f = file;
+    if (f.size > 1024 * 1024) {
+      f = await new Promise<File>((resolve) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (ev) => {
+          const img = new Image();
+          img.src = ev.target?.result as string;
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let { width, height } = img;
+            const max = 1200;
+            if (width > height && width > max) { height *= max / width; width = max; }
+            else if (height > max) { width *= max / height; height = max; }
+            canvas.width = width; canvas.height = height;
+            canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
+            canvas.toBlob(blob => {
+              if (blob) resolve(new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: 'image/jpeg' }));
+              else resolve(file);
+            }, 'image/jpeg', 0.8);
+          }
+        };
+      });
+    }
+
+    const path = `chat-images/${Date.now()}-${f.name}`;
+    const { error: upErr } = await supabase.storage.from('user-files').upload(path, f);
+    if (!upErr) {
+      const { data: urlData } = supabase.storage.from('user-files').getPublicUrl(path);
+      const url = urlData.publicUrl;
+      await supabase.from('messages').insert({
+        user_id: student.id, sender: 'consultant', receiver_role: msgRole, content: `![image](${url})`, is_read: false
+      });
+      await loadMessages(msgRole);
+      setTimeout(() => bottomMsgRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    } else {
+      alert('이미지 업로드에 실패했습니다.');
+    }
+    setMsgSending(false);
+    if (msgFileInputRef.current) msgFileInputRef.current.value = '';
+  };
+
+  const handleMsgReply = (content: string) => {
+    const preview = content.length > 20 ? content.slice(0, 20) + '...' : content;
+    setMsgInput(prev => `ㄴ> ${preview}\n\n${prev}`);
+  };
+
+  const startMsgEdit = (msg: AdminMessage) => {
+    setEditingMsgId(msg.id);
+    setMsgInput(msg.content);
+  };
+
+  const handleMsgDelete = async (id: string) => {
+    if (!confirm('메세지를 삭제하시겠습니까?')) return;
+    await supabase.from('messages').delete().eq('id', id);
+    setMessages(prev => prev.filter(m => m.id !== id));
+  };
+
+  const renderMsgContent = (content: string) => {
+    if (content.startsWith('![image](') && content.endsWith(')')) {
+      return <img src={content.slice(9, -1)} alt="attached" style={{ maxWidth: '100%', borderRadius: '8px', cursor: 'pointer' }} onClick={() => window.open(content.slice(9, -1))} />;
+    }
+    return content;
+  };
+
+  const groupedAdminMessages = messages.reduce((acc, msg, i) => {
+    const date = msg.created_at.slice(0, 10);
+    const prevDate = i > 0 ? messages[i-1].created_at.slice(0, 10) : null;
+    if (date !== prevDate) acc.push({ type: 'date', date, id: `date-${i}` });
+    acc.push({ type: 'msg', msg });
+    return acc;
+  }, [] as ({ type: 'date'; date: string; id: string } | { type: 'msg'; msg: AdminMessage })[]);
 
   const TAB = (active: boolean) => ({
     flex: 1, padding: '11px 0', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '700' as const,
@@ -820,7 +911,18 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
                   <MessageCircle size={32} strokeWidth={1.5} style={{ marginBottom: '10px' }} />
                   <p style={{ margin: 0, fontSize: '13px' }}>메세지가 없어요</p>
                 </div>
-              ) : messages.map(msg => {
+              ) : groupedAdminMessages.map(item => {
+                if (item.type === 'date') {
+                  const [y, m, d] = item.date.split('-');
+                  return (
+                    <div key={item.id} style={{ textAlign: 'center', margin: '14px 0 10px' }}>
+                      <span style={{ fontSize: '12px', color: '#64748b', backgroundColor: '#e2e8f0', padding: '4px 12px', borderRadius: '20px', fontWeight: '600' }}>
+                        {`${y}년 ${m}월 ${d}일`}
+                      </span>
+                    </div>
+                  );
+                }
+                const msg = item.msg;
                 const isConsultant = msg.sender === 'consultant';
                 const roleColor = msgRole === 'student' ? '#2563eb' : '#7c3aed';
                 return (
@@ -832,21 +934,32 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
                     )}
                     <div style={{ maxWidth: '65%' }}>
                       {!isConsultant && <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#64748b', fontWeight: '600' }}>{msgRole === 'student' ? '학생' : '부모님'}</p>}
-                      <div style={{
+                      <div
+                        onContextMenu={(e) => { e.preventDefault(); handleMsgReply(msg.content); }}
+                        style={{
                         padding: '9px 13px',
                         borderRadius: isConsultant ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
                         backgroundColor: isConsultant ? '#0f172a' : '#ffffff',
                         color: isConsultant ? '#ffffff' : '#0f172a',
-                        fontSize: '14px', lineHeight: 1.6, wordBreak: 'break-word',
+                        fontSize: '14px', lineHeight: 1.6, wordBreak: 'break-word', whiteSpace: 'pre-wrap',
                         border: isConsultant ? 'none' : '1px solid #e2e8f0',
                         boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                        cursor: 'context-menu',
                       }}>
-                        {msg.content}
+                        {renderMsgContent(msg.content)}
                       </div>
-                      <p style={{ margin: '3px 0 0 0', fontSize: '11px', color: '#94a3b8', textAlign: isConsultant ? 'right' : 'left' }}>
-                        {new Date(msg.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
-                        {!isConsultant && !msg.is_read && <span style={{ marginLeft: '4px', color: '#f59e0b', fontWeight: '600' }}>· 미확인</span>}
-                      </p>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: isConsultant ? 'flex-end' : 'flex-start', marginTop: '3px', gap: '6px' }}>
+                        <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8', textAlign: isConsultant ? 'right' : 'left' }}>
+                          {new Date(msg.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                          {!isConsultant && !msg.is_read && <span style={{ marginLeft: '4px', color: '#f59e0b', fontWeight: '600' }}>· 미확인</span>}
+                        </p>
+                        {isConsultant && (
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button onClick={() => startMsgEdit(msg)} style={{ padding: '2px 4px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#94a3b8' }} title="수정"><Pencil size={11} /></button>
+                            <button onClick={() => handleMsgDelete(msg.id)} style={{ padding: '2px 4px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#ef4444' }} title="삭제"><X size={13} /></button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -855,12 +968,17 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
             </div>
 
             {/* 입력창 */}
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+              <input type="file" ref={msgFileInputRef} accept="image/*" onChange={handleMsgImageUpload} style={{ display: 'none' }} />
+              <button onClick={() => msgFileInputRef.current?.click()} disabled={msgSending}
+                style={{ width: '40px', height: '40px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', color: '#64748b', cursor: msgSending ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <ImageIcon size={18} />
+              </button>
               <textarea
                 value={msgInput}
                 onChange={e => setMsgInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); sendMessage(); } }}
-                placeholder={`${msgRole === 'student' ? '학생' : '부모님'}에게 메세지 전송 (Enter로 전송)`}
+                placeholder={editingMsgId ? "메세지 수정 (Enter로 저장)" : `${msgRole === 'student' ? '학생' : '부모님'}에게 메세지 전송 (Enter로 전송)`}
                 rows={2}
                 style={{ flex: 1, padding: '11px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none', resize: 'none', fontFamily: 'inherit', lineHeight: 1.5 }}
               />
