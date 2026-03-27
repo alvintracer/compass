@@ -208,9 +208,10 @@ function ChangePinModal({ role, userId, currentPin, onSaved, onClose }: {
 }
 
 // ── 메세지 뷰 ────────────────────────────────────────────────────────────────
-function MessageView({ role, userId, onLock }: {
+function MessageView({ role, userId, session, onLock }: {
   role: Role;
   userId: string;
+  session: Session;
   onLock: () => void;
 }) {
   const { isMobile } = useBreakpoint();
@@ -313,6 +314,18 @@ function MessageView({ role, userId, onLock }: {
         if (prev.find(msg => msg.id === data.id)) return prev;
         return [...prev, data as Message];
       });
+
+      // admin 텔레그램 알림 발송
+      const senderName = session.user.email?.split('@')[0] || '사용자';
+      const roleLabel = role === 'student' ? '학생' : '학부모';
+      const preview = input.trim().substring(0, 100) + (input.trim().length > 100 ? '...' : '');
+      
+      supabase.functions.invoke('send-notification', {
+        body: { 
+          action: 'admin_telegram', 
+          message: `💬 <b>새 메세지 (${roleLabel})</b>\n\n👤 보낸분: ${senderName}\n📝 내용: ${preview}\n\n어드민에서 답장해주세요.` 
+        }
+      }).catch(err => console.error('Notification error:', err));
     }
 
     setInput('');
@@ -358,6 +371,17 @@ function MessageView({ role, userId, onLock }: {
       }).select().single();
       if (!error && data) {
         setMessages(prev => prev.find(msg => msg.id === data.id) ? prev : [...prev, data as Message]);
+
+        // admin 텔레그램 알림 발송 (이미지)
+        const senderName = session.user.email?.split('@')[0] || '사용자';
+        const roleLabel = role === 'student' ? '학생' : '학부모';
+        
+        supabase.functions.invoke('send-notification', {
+          body: { 
+            action: 'admin_telegram', 
+            message: `🖼️ <b>새 이미지 메세지 (${roleLabel})</b>\n\n👤 보낸분: ${senderName}\n\n어드민에서 확인해주세요.` 
+          }
+        }).catch(err => console.error('Notification error:', err));
       }
     } else {
       alert('이미지 업로드에 실패했습니다.');
@@ -621,6 +645,7 @@ export default function Messages({ session }: MessagesProps) {
         <MessageView
           role={activeRole}
           userId={session.user.id}
+          session={session}
           onLock={() => setUnlocked(prev => ({ ...prev, [activeRole]: false }))}
         />
       )}
