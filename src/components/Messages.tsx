@@ -532,6 +532,13 @@ function MessageView({ role, userId, session, onLock }: {
         <div ref={bottomRef} />
       </div>
 
+      {/* 토큰 안내 */}
+      <div style={{ padding: '6px 16px', backgroundColor: '#fffbeb', borderLeft: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0' }}>
+        <p style={{ margin: 0, fontSize: '11px', color: '#92400e', textAlign: 'center', lineHeight: 1.4 }}>
+          💡 컨설턴트 답변 1회당 AI토큰 또는 컨설턴트 토큰이 차감될 수 있습니다.
+        </p>
+      </div>
+
       {/* 입력창 */}
       <div style={{ padding: '14px 16px', backgroundColor: '#ffffff', borderRadius: '0 0 14px 14px', border: '1px solid #e2e8f0', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
         <input type="file" ref={fileInputRef} accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />

@@ -11,7 +11,7 @@ import {
   FileEdit, RefreshCw, ImagePlus, Users, ChevronRight,
   ChevronLeft, Pencil, Save, X, Image as ImageIcon,
   MessageCircle, User, Zap, Plus, Minus, DollarSign,
-  Clock, CheckCircle2, Bell,
+  Clock, CheckCircle2, Bell, Bot, Sparkles,
 } from 'lucide-react';
 
 interface AdminPageProps {
@@ -132,6 +132,14 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const msgFileInputRef               = React.useRef<HTMLInputElement>(null);
   const bottomMsgRef                  = React.useRef<HTMLDivElement>(null);
+
+  // AI 답변 생성
+  const [aiSelectMode, setAiSelectMode]           = useState(false);
+  const [aiSelectedMsgIds, setAiSelectedMsgIds]   = useState<Set<string>>(new Set());
+  const [aiModalOpen, setAiModalOpen]             = useState(false);
+  const [aiInstruction, setAiInstruction]         = useState('');
+  const [aiGenerating, setAiGenerating]           = useState(false);
+  const [aiModel, setAiModel]                     = useState<'gpt-4.1-mini' | 'gpt-4.1'>('gpt-4.1-mini');
 
   // 성취도
   interface WeekGoal { id: string; week_start: string; qna_target: number; qna_done: number; research_target: number; research_done: number; mock_target: number; mock_done: number; }
@@ -397,6 +405,60 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
     if (!confirm('메세지를 삭제하시겠습니까?')) return;
     await supabase.from('messages').delete().eq('id', id);
     setMessages(prev => prev.filter(m => m.id !== id));
+  };
+
+  // ── AI 답변 생성 ────────────────────────────────────────────────────────
+  const toggleAiMsgSelect = (id: string) => {
+    setAiSelectedMsgIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (aiSelectedMsgIds.size === messages.length) {
+      setAiSelectedMsgIds(new Set());
+    } else {
+      setAiSelectedMsgIds(new Set(messages.map(m => m.id)));
+    }
+  };
+
+  const handleAiGenerate = async () => {
+    const selectedMsgs = messages
+      .filter(m => aiSelectedMsgIds.has(m.id))
+      .map(m => ({ sender: m.sender, content: m.content, created_at: m.created_at }));
+
+    if (selectedMsgs.length === 0) {
+      alert('AI에게 보여줄 메세지를 1개 이상 선택해주세요.');
+      return;
+    }
+
+    setAiGenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-reply', {
+        body: {
+          student_id: student.id,
+          student_name: student.name || student.email?.split('@')[0] || '',
+          selected_messages: selectedMsgs,
+          receiver_role: msgRole,
+          additional_instruction: aiInstruction.trim(),
+          model: aiModel,
+        }
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      setMsgInput(data.generatedReply || '');
+      setAiModalOpen(false);
+      setAiSelectMode(false);
+      setAiSelectedMsgIds(new Set());
+      setAiInstruction('');
+    } catch (err: any) {
+      alert('AI 답변 생성 실패: ' + (err.message || '알 수 없는 오류'));
+    }
+    setAiGenerating(false);
   };
 
   const renderMsgContent = (content: string) => {
@@ -900,6 +962,32 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
                   </button>
                 );
               })}
+              {/* AI 답변 생성 토글 */}
+              <div style={{ flex: 1 }} />
+              {aiSelectMode ? (
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <button onClick={toggleSelectAll}
+                    style={{ padding: '7px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', color: '#475569', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
+                    {aiSelectedMsgIds.size === messages.length ? '전체 해제' : '전체 선택'}
+                  </button>
+                  <button onClick={() => { if (aiSelectedMsgIds.size > 0) setAiModalOpen(true); else alert('메세지를 선택해주세요.'); }}
+                    disabled={aiSelectedMsgIds.size === 0}
+                    style={{ padding: '7px 14px', borderRadius: '8px', border: 'none', backgroundColor: aiSelectedMsgIds.size > 0 ? '#0891b2' : '#e2e8f0', color: '#ffffff', fontSize: '12px', fontWeight: '700', cursor: aiSelectedMsgIds.size > 0 ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '5px', transition: 'all 0.15s' }}>
+                    <Sparkles size={13} />
+                    AI 생성 ({aiSelectedMsgIds.size})
+                  </button>
+                  <button onClick={() => { setAiSelectMode(false); setAiSelectedMsgIds(new Set()); }}
+                    style={{ padding: '7px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', color: '#94a3b8', fontSize: '12px', cursor: 'pointer' }}>
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => setAiSelectMode(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '10px', border: '1px solid #0891b2', backgroundColor: '#ecfeff', color: '#0891b2', fontSize: '13px', fontWeight: '700', cursor: 'pointer', transition: 'all 0.15s' }}>
+                  <Bot size={14} />
+                  AI 답변 생성
+                </button>
+              )}
             </div>
 
             {/* 메세지 목록 */}
@@ -926,13 +1014,20 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
                 const isConsultant = msg.sender === 'consultant';
                 const roleColor = msgRole === 'student' ? '#2563eb' : '#7c3aed';
                 return (
-                  <div key={msg.id} style={{ display: 'flex', justifyContent: isConsultant ? 'flex-end' : 'flex-start' }}>
+                  <div key={msg.id} style={{ display: 'flex', justifyContent: isConsultant ? 'flex-end' : 'flex-start', alignItems: 'flex-end' }}>
+                    {/* AI 선택 모드: 체크박스 */}
+                    {aiSelectMode && (
+                      <button onClick={() => toggleAiMsgSelect(msg.id)}
+                        style={{ width: '22px', height: '22px', borderRadius: '6px', border: `2px solid ${aiSelectedMsgIds.has(msg.id) ? '#0891b2' : '#cbd5e1'}`, backgroundColor: aiSelectedMsgIds.has(msg.id) ? '#0891b2' : '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, marginRight: '6px', marginBottom: '4px', transition: 'all 0.15s' }}>
+                        {aiSelectedMsgIds.has(msg.id) && <Check size={12} color="#ffffff" />}
+                      </button>
+                    )}
                     {!isConsultant && (
                       <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: msgRole === 'student' ? '#eff6ff' : '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '8px', flexShrink: 0, alignSelf: 'flex-end' }}>
                         {msgRole === 'student' ? <User size={13} color={roleColor} /> : <Users size={13} color={roleColor} />}
                       </div>
                     )}
-                    <div style={{ maxWidth: '65%' }}>
+                    <div style={{ maxWidth: aiSelectMode ? '60%' : '65%' }}>
                       {!isConsultant && <p style={{ margin: '0 0 3px 0', fontSize: '11px', color: '#64748b', fontWeight: '600' }}>{msgRole === 'student' ? '학생' : '부모님'}</p>}
                       <div
                         onContextMenu={(e) => { e.preventDefault(); handleMsgReply(msg.content); }}
@@ -988,6 +1083,75 @@ function StudentDetailPanel({ student, onBack }: { student: StudentProfile; onBa
                 전송
               </button>
             </div>
+
+            {/* AI 답변 생성 모달 */}
+            {aiModalOpen && (
+              <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+                onClick={() => !aiGenerating && setAiModalOpen(false)}>
+                <div onClick={e => e.stopPropagation()}
+                  style={{ backgroundColor: '#ffffff', borderRadius: '20px', padding: '32px', width: '100%', maxWidth: '480px', border: '1px solid #e2e8f0', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+                    <div style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: '#ecfeff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Bot size={20} color="#0891b2" />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '800', color: '#0f172a' }}>AI 답변 생성</h3>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>
+                        선택된 메세지 {aiSelectedMsgIds.size}개 · {msgRole === 'student' ? '학생' : '부모님'}에게 답장
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ padding: '14px', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+                    <p style={{ margin: '0 0 6px 0', fontSize: '12px', fontWeight: '700', color: '#475569' }}>AI가 참고하는 컨텍스트:</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {['📋 학생 정의서', '🎤 면접 Q&A', '📖 탐구 과제', '💬 선택된 대화'].map(item => (
+                        <span key={item} style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '6px', backgroundColor: '#ffffff', border: '1px solid #e2e8f0', color: '#475569', fontWeight: '600' }}>{item}</span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 모델 선택 */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', fontWeight: '700', color: '#475569' }}>AI 모델</label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {([{ id: 'gpt-4.1-mini' as const, name: '4.1 Mini', desc: '빠르고 경제적 (~₩3/회)', color: '#0891b2' }, { id: 'gpt-4.1' as const, name: '4.1 Full', desc: '최고 퀄리티 (~₩16/회)', color: '#7c3aed' }]).map(m => (
+                        <button key={m.id} onClick={() => setAiModel(m.id)}
+                          style={{ flex: 1, padding: '10px 12px', borderRadius: '10px', border: `2px solid ${aiModel === m.id ? m.color : '#e2e8f0'}`, backgroundColor: aiModel === m.id ? (m.id === 'gpt-4.1' ? '#f5f3ff' : '#ecfeff') : '#ffffff', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s' }}>
+                          <p style={{ margin: 0, fontSize: '13px', fontWeight: '700', color: aiModel === m.id ? m.color : '#475569' }}>{m.name}</p>
+                          <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: '#94a3b8' }}>{m.desc}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', fontWeight: '700', color: '#475569' }}>
+                    추가 지시사항 (선택)
+                  </label>
+                  <textarea
+                    value={aiInstruction}
+                    onChange={e => setAiInstruction(e.target.value)}
+                    placeholder="예: 수시 원서 접수 일정도 언급해줘 / 좀 더 따뜻한 톤으로 / 간결하게 3줄로"
+                    rows={3}
+                    disabled={aiGenerating}
+                    style={{ width: '100%', padding: '12px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', resize: 'none', fontFamily: 'inherit', lineHeight: 1.6, boxSizing: 'border-box', color: '#334155' }}
+                  />
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                    <button onClick={() => { setAiModalOpen(false); setAiInstruction(''); }}
+                      disabled={aiGenerating}
+                      style={{ flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', color: '#64748b', fontSize: '13px', fontWeight: '600', cursor: aiGenerating ? 'not-allowed' : 'pointer' }}>
+                      취소
+                    </button>
+                    <button onClick={handleAiGenerate}
+                      disabled={aiGenerating}
+                      style={{ flex: 2, padding: '12px', borderRadius: '10px', border: 'none', backgroundColor: '#0891b2', color: '#ffffff', fontSize: '13px', fontWeight: '700', cursor: aiGenerating ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: aiGenerating ? 0.7 : 1, transition: 'all 0.15s' }}>
+                      {aiGenerating ? <><Loader2 size={15} /> 생성 중...</> : <><Sparkles size={15} /> 답변 생성하기</>}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
         ) : tab === 'schoolrecord' ? (

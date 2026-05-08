@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   Loader2, Save, RotateCcw, Plus, ChevronDown, ChevronUp,
-  Check, Clock, Zap, FileText, Mic, BookOpen, X,
+  Check, Clock, Zap, FileText, Mic, BookOpen, X, MessageCircle,
 } from 'lucide-react';
 
 // ── 공통 반응형 Hook ────────────────────────────────────────────────────────
@@ -111,6 +111,24 @@ const PROMPT_TYPES = [
 
 [개선 포인트]
 초안에서 더 보완하면 좋을 점 2~3가지를 간결하게 설명해 주세요.`,
+  },
+  {
+    id: 'message_reply',
+    name: 'AI 답변 생성',
+    icon: MessageCircle,
+    color: '#0891b2',
+    bg: '#ecfeff',
+    desc: '대화 맥락 + 학생 정보 → 컨설턴트 답변 자동 생성',
+    defaultPrompt: `당신은 대한민국 최고의 대학 입시 컨설턴트 "컴파스"입니다.
+학생/학부모와 메세지를 주고받으며 입시 컨설팅을 진행합니다.
+
+## 작성 규칙
+- 부모님 대상: 정중한 존댓말, 안심시키는 톤, 진행상황 중심으로 소통
+- 학생 대상: 친근하면서도 동기부여가 되는 톤, 구체적 액션 제시
+- 답변은 메신저 메세지 형태로 자연스럽게 작성 (너무 길지 않게)
+- 학생의 정의서, 면접 준비 현황, 탐구 활동 등 제공된 컨텍스트를 적극 활용
+- 마크다운 형식 사용하지 말고 일반 텍스트로 작성
+- 인사말/서명 없이 본문만 작성`,
   },
 ];
 
@@ -340,13 +358,14 @@ function PromptCard({ typeMeta, onSaved }: {
 // ── 메인 PromptManager ──────────────────────────────────────────────────────
 export default function PromptManager() {
   const isMobile = useIsMobile();
-  const [activeGroup, setActiveGroup] = useState<'identity' | 'interview' | 'record'>('identity');
+  const [activeGroup, setActiveGroup] = useState<'identity' | 'interview' | 'record' | 'message'>('identity');
   const [refreshKey, setRefreshKey]   = useState(0);
 
   const GROUP_TABS = [
     { id: 'identity'  as const, name: '정의서', icon: FileText, color: '#2563eb' },
     { id: 'interview' as const, name: '면접 Q&A', icon: Mic,    color: '#7c3aed' },
     { id: 'record'    as const, name: '생기부 첨삭', icon: BookOpen, color: '#059669' },
+    { id: 'message'   as const, name: 'AI 답변',   icon: MessageCircle, color: '#0891b2' },
   ];
 
   const filtered = PROMPT_TYPES.filter(p => p.id.startsWith(activeGroup));
