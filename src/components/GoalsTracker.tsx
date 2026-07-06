@@ -6,10 +6,21 @@ import { useBreakpoint } from '../hooks/useBreakpoint';
 import {
   Target, Calendar, CheckCircle2, Circle, TrendingUp,
   Loader2, Mic, BookOpen, MonitorPlay, ClipboardList,
-  ChevronDown, ChevronUp, AlertCircle,
+  ChevronDown, ChevronUp, AlertCircle, GraduationCap, Save
 } from 'lucide-react';
 
 interface GoalsTrackerProps { session: Session }
+
+interface TargetUniversity {
+  id?: string;
+  priority: number;
+  school: string;
+  department: string;
+  admission_type: string;
+  grade_30: string;
+  grade_50: string;
+  grade_70: string;
+}
 
 interface CustomTask {
   id: string;
@@ -72,6 +83,8 @@ export default function GoalsTracker({ session }: GoalsTrackerProps) {
   // 이번주 목표
   const [weeklyGoal, setWeeklyGoal] = useState<WeeklyGoal | null>(null);
   const [customTasks, setCustomTasks] = useState<CustomTask[]>([]);
+  const [targetUnivs, setTargetUnivs] = useState<TargetUniversity[]>([]);
+  const [isSavingUnivs, setIsSavingUnivs] = useState(false);
 
   // 컨설턴트 과제 펼치기
   const [showAllTasks, setShowAllTasks] = useState(false);
@@ -148,6 +161,31 @@ export default function GoalsTracker({ session }: GoalsTrackerProps) {
       .order('created_at', { ascending: false });
     setCustomTasks((taskData as CustomTask[]) || []);
 
+    // 6) 지망 학교 및 학과
+    const { data: univData } = await supabase
+      .from('target_universities')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .order('priority', { ascending: true });
+    
+    if (univData && univData.length > 0) {
+      let padded = [...univData];
+      for (let i = 1; i <= 8; i++) {
+        if (!padded.find(u => u.priority === i)) {
+          padded.push({ priority: i, school: '', department: '', admission_type: '', grade_30: '', grade_50: '', grade_70: '' });
+        }
+      }
+      padded.sort((a, b) => a.priority - b.priority);
+      setTargetUnivs(padded);
+    } else {
+      const initialUnivs = Array.from({ length: 8 }).map((_, i) => ({
+        priority: i + 1,
+        school: '', department: '', admission_type: '',
+        grade_30: '', grade_50: '', grade_70: ''
+      }));
+      setTargetUnivs(initialUnivs);
+    }
+
     setLoading(false);
   }, [session.user.id]);
 
@@ -205,6 +243,40 @@ export default function GoalsTracker({ session }: GoalsTrackerProps) {
     const newVal = !task.is_completed;
     await supabase.from('custom_tasks').update({ is_completed: newVal }).eq('id', task.id);
     setCustomTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_completed: newVal } : t));
+  };
+
+  const handleUnivChange = (index: number, field: keyof TargetUniversity, value: string) => {
+    setTargetUnivs(prev => {
+      const newUnivs = [...prev];
+      newUnivs[index] = { ...newUnivs[index], [field]: value };
+      return newUnivs;
+    });
+  };
+
+  const handleSaveUniversities = async () => {
+    setIsSavingUnivs(true);
+    try {
+      await supabase.from('target_universities').delete().eq('user_id', session.user.id);
+      const dataToSave = targetUnivs.map(univ => ({
+        user_id: session.user.id,
+        priority: univ.priority,
+        school: univ.school,
+        department: univ.department,
+        admission_type: univ.admission_type,
+        grade_30: univ.grade_30,
+        grade_50: univ.grade_50,
+        grade_70: univ.grade_70
+      }));
+      const { error } = await supabase.from('target_universities').insert(dataToSave);
+      if (error) throw error;
+      alert('지망 학교 및 학과가 저장되었습니다.');
+      fetchStats();
+    } catch (err) {
+      console.error(err);
+      alert('저장 중 오류가 발생했습니다. (테이블이 생성되어 있는지 확인해주세요)');
+    } finally {
+      setIsSavingUnivs(false);
+    }
   };
 
   // 목표 데이터
@@ -271,6 +343,81 @@ export default function GoalsTracker({ session }: GoalsTrackerProps) {
               {Math.floor(dDay / 7)}주 {dDay % 7}일
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* 지망 학교 및 학과 */}
+      <div style={{
+        backgroundColor: '#ffffff', borderRadius: '20px', border: '1px solid #e2e8f0',
+        padding: isMobile ? '20px' : '28px',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <GraduationCap size={18} /> 지망 학교 및 학과
+          </h3>
+          <button
+            onClick={handleSaveUniversities}
+            disabled={isSavingUnivs}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              backgroundColor: '#2563eb', color: '#fff', border: 'none',
+              padding: '8px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: '600',
+              cursor: isSavingUnivs ? 'not-allowed' : 'pointer', opacity: isSavingUnivs ? 0.7 : 1,
+              transition: 'all 0.2s'
+            }}
+          >
+            {isSavingUnivs ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            저장하기
+          </button>
+        </div>
+        
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                <th style={{ padding: '12px', fontSize: '13px', color: '#64748b', fontWeight: '700', width: '80px' }}>순위</th>
+                <th style={{ padding: '12px', fontSize: '13px', color: '#64748b', fontWeight: '700', width: '150px' }}>학교</th>
+                <th style={{ padding: '12px', fontSize: '13px', color: '#64748b', fontWeight: '700', width: '150px' }}>학과</th>
+                <th style={{ padding: '12px', fontSize: '13px', color: '#64748b', fontWeight: '700', width: '120px' }}>전형</th>
+                <th style={{ padding: '12px', fontSize: '13px', color: '#64748b', fontWeight: '700' }}>평균 등급 (30%)</th>
+                <th style={{ padding: '12px', fontSize: '13px', color: '#64748b', fontWeight: '700' }}>평균 등급 (50%)</th>
+                <th style={{ padding: '12px', fontSize: '13px', color: '#64748b', fontWeight: '700' }}>평균 등급 (70%)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {targetUnivs.map((univ, index) => (
+                <tr key={univ.priority} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                  <td style={{ padding: '12px', fontSize: '14px', fontWeight: '600', color: '#0f172a' }}>
+                    {univ.priority <= 6 ? `${univ.priority}순위` : `후보 ${univ.priority - 6}`}
+                  </td>
+                  <td style={{ padding: '8px' }}>
+                    <input type="text" value={univ.school} onChange={(e) => handleUnivChange(index, 'school', e.target.value)}
+                      placeholder="학교명" style={{ width: '100%', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', outline: 'none' }} />
+                  </td>
+                  <td style={{ padding: '8px' }}>
+                    <input type="text" value={univ.department} onChange={(e) => handleUnivChange(index, 'department', e.target.value)}
+                      placeholder="학과명" style={{ width: '100%', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', outline: 'none' }} />
+                  </td>
+                  <td style={{ padding: '8px' }}>
+                    <input type="text" value={univ.admission_type} onChange={(e) => handleUnivChange(index, 'admission_type', e.target.value)}
+                      placeholder="전형명" style={{ width: '100%', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', outline: 'none' }} />
+                  </td>
+                  <td style={{ padding: '8px' }}>
+                    <input type="text" value={univ.grade_30} onChange={(e) => handleUnivChange(index, 'grade_30', e.target.value)}
+                      placeholder="예: 1.5" style={{ width: '100%', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', outline: 'none' }} />
+                  </td>
+                  <td style={{ padding: '8px' }}>
+                    <input type="text" value={univ.grade_50} onChange={(e) => handleUnivChange(index, 'grade_50', e.target.value)}
+                      placeholder="예: 1.7" style={{ width: '100%', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', outline: 'none' }} />
+                  </td>
+                  <td style={{ padding: '8px' }}>
+                    <input type="text" value={univ.grade_70} onChange={(e) => handleUnivChange(index, 'grade_70', e.target.value)}
+                      placeholder="예: 2.0" style={{ width: '100%', padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '14px', outline: 'none' }} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
